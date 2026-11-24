@@ -1,0 +1,6 @@
+{
+  "name": "Al-Majd International Academy",
+  "description": "Plateforme académique internationale pour les écoles d'Arabie Saoudite : cours détaillés (American SAT/AP, IB, IGCSE, Nafes, Qudurat, Bac Français), examens générés par IA Gemini, Past Papers payants avec corrections et formateurs en ligne (Marwan Mhamdi & Mohamed Cherif).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
