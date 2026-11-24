@@ -159,7 +159,9 @@ export function CourseWorkspace({
   const [enrollMessage, setEnrollMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
-    initGoogleWorkspaceAuth().catch(() => {});
+    try {
+      initGoogleWorkspaceAuth();
+    } catch {}
   }, []);
 
   const isTrackLocked = Boolean(trackLock && !hasPaidAccess);
@@ -257,9 +259,11 @@ export function CourseWorkspace({
     setConnectingGoogle(true);
     setEnrollMessage(null);
     try {
-      const auth = await signInWithGoogleForMeet();
-      setGoogleAccessToken(auth.accessToken);
-      setGoogleEmail(auth.email);
+      const authResult = await signInWithGoogleForMeet();
+      if (authResult) {
+        setGoogleAccessToken(authResult.accessToken);
+        setGoogleEmail(authResult.user.email);
+      }
     } catch (err: any) {
       setEnrollMessage({ type: 'error', text: err?.message || 'Connexion Google annulée.' });
     } finally {
@@ -326,10 +330,12 @@ export function CourseWorkspace({
     try {
       let gToken = googleAccessToken || getCachedGoogleAccessToken();
       if (!gToken) {
-        const auth = await signInWithGoogleForMeet();
-        gToken = auth.accessToken;
-        setGoogleAccessToken(gToken);
-        setGoogleEmail(auth.email);
+        const authResult = await signInWithGoogleForMeet();
+        if (authResult) {
+          gToken = authResult.accessToken;
+          setGoogleAccessToken(gToken);
+          setGoogleEmail(authResult.user.email);
+        }
       }
       const res = await apiRequest<{ booking: BookingItem }>(
         `/api/bookings/${encodeURIComponent(confirmedBooking.id)}/meet`,
