@@ -1197,8 +1197,36 @@ export function createApiApp() {
     }
   });
 
+  async function ensureDefaultTeacherCredentialsSeeded() {
+    try {
+      const hasStored = await db.hasAnyTeacherCredentials();
+      if (!hasStored) {
+        const marwanHash = hashPassword('030590');
+        await db.saveTeacherCredential({
+          teacherId: 'marwan',
+          loginAliases: ['marwen03', 'marwan', 'rmarwan26@alekhaaschools.com', 'marwan mhamdi'],
+          passwordHash: marwanHash.hash,
+          salt: marwanHash.salt,
+        });
+
+        const mohamedHash = hashPassword('120786');
+        await db.saveTeacherCredential({
+          teacherId: 'mohamed',
+          loginAliases: ['med01', 'mohamed', 'm.cherif@almajd-academy.sa', 'cherifmed2030@gmail.com', 'mohamed cherif'],
+          passwordHash: mohamedHash.hash,
+          salt: mohamedHash.salt,
+        });
+      }
+    } catch (e) {
+      console.error('Error auto-seeding teacher credentials:', e);
+    }
+  }
+
+  ensureDefaultTeacherCredentialsSeeded();
+
   // --- Private Teacher Portal Authentication (Password + Login Gate) ---
   app.get('/api/teacher/auth/status', async (_req, res) => {
+    await ensureDefaultTeacherCredentialsSeeded();
     const envPass = process.env.TEACHER_PORTAL_PASSCODE?.trim();
     const hasStored = await db.hasAnyTeacherCredentials();
     res.json({
@@ -1227,14 +1255,14 @@ export function createApiApp() {
       const { hash, salt } = hashPassword(password.trim());
       const marwanEmail = isNonEmptyString(marwanLogin, 120)
         ? marwanLogin.trim().toLowerCase()
-        : 'rmarwan26@alekhaaschools.com';
+        : 'marwen03';
       const mohamedEmail = isNonEmptyString(mohamedLogin, 120)
         ? mohamedLogin.trim().toLowerCase()
-        : 'm.cherif@almajd-academy.sa';
+        : 'med01';
 
       await db.saveTeacherCredential({
         teacherId: 'marwan',
-        loginAliases: [marwanEmail, 'marwan', 'rmarwan26@alekhaaschools.com', 'marwan mhamdi'],
+        loginAliases: [marwanEmail, 'marwen03', 'marwan', 'rmarwan26@alekhaaschools.com', 'marwan mhamdi'],
         passwordHash: hash,
         salt,
       });
@@ -1243,6 +1271,7 @@ export function createApiApp() {
         teacherId: 'mohamed',
         loginAliases: [
           mohamedEmail,
+          'med01',
           'mohamed',
           'm.cherif@almajd-academy.sa',
           'cherifmed2030@gmail.com',
@@ -1268,6 +1297,7 @@ export function createApiApp() {
 
   app.post('/api/teacher/auth/login', async (req, res) => {
     try {
+      await ensureDefaultTeacherCredentialsSeeded();
       const { login, password } = req.body ?? {};
       if (!isNonEmptyString(login, 120) || !isNonEmptyString(password, 128)) {
         res.status(400).json({ error: 'Identifiant (login) et mot de passe requis.' });
@@ -1285,7 +1315,7 @@ export function createApiApp() {
           return;
         }
         const resolvedTid: 'marwan' | 'mohamed' =
-          cleanLogin.includes('mohamed') || cleanLogin.includes('cherif') ? 'mohamed' : 'marwan';
+          cleanLogin.includes('mohamed') || cleanLogin.includes('cherif') || cleanLogin.includes('med01') ? 'mohamed' : 'marwan';
         const token = signTeacherToken(resolvedTid, cleanLogin);
         res.json({ token, teacherId: resolvedTid, login: cleanLogin });
         return;
@@ -1314,6 +1344,65 @@ export function createApiApp() {
 
   app.get('/api/teacher/auth/me', requireTeacherAuth, (req: AuthenticatedRequest, res) => {
     res.json({ teacher: req.teacher });
+  });
+
+  app.post('/api/teacher/auth/update-credentials', requireTeacherAuth, async (req: AuthenticatedRequest, res) => {
+    try {
+      await ensureDefaultTeacherCredentialsSeeded();
+      const teacherId = req.teacher!.teacherId;
+      const { newLogin, newPassword, currentPassword } = req.body ?? {};
+
+      const creds = await db.getTeacherCredentials();
+      const currentCred = creds.find(c => c.teacherId === teacherId);
+
+      if (!currentCred) {
+        res.status(404).json({ error: 'Identifiants formateur introuvables.' });
+        return;
+      }
+
+      if (currentPassword && !verifyPassword(String(currentPassword).trim(), currentCred.passwordHash, currentCred.salt)) {
+        res.status(401).json({ error: 'Mot de passe actuel incorrect.' });
+        return;
+      }
+
+      let newHash = currentCred.passwordHash;
+      let newSalt = currentCred.salt;
+
+      if (newPassword) {
+        if (typeof newPassword !== 'string' || newPassword.trim().length < 6) {
+          res.status(400).json({ error: 'Le nouveau mot de passe doit contenir au moins 6 caractères.' });
+          return;
+        }
+        const hashed = hashPassword(newPassword.trim());
+        newHash = hashed.hash;
+        newSalt = hashed.salt;
+      }
+
+      let aliases = [...currentCred.loginAliases];
+      if (newLogin && typeof newLogin === 'string' && newLogin.trim().length > 0) {
+        const cleanNewLogin = newLogin.trim().toLowerCase();
+        aliases = [cleanNewLogin, ...aliases];
+      }
+
+      await db.saveTeacherCredential({
+        teacherId,
+        loginAliases: aliases,
+        passwordHash: newHash,
+        salt: newSalt,
+      });
+
+      const updatedLogin = aliases[0];
+      const newToken = signTeacherToken(teacherId, updatedLogin);
+
+      res.json({
+        success: true,
+        token: newToken,
+        login: updatedLogin,
+        message: 'Identifiants mis à jour avec succès.',
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de la mise à jour des identifiants.' });
+    }
   });
 
   // Protect ALL remaining /api/teacher/* administrative endpoints

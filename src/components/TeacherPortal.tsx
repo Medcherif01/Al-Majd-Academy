@@ -277,6 +277,54 @@ export function TeacherPortal({
   const [newSlot, setNewSlot] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
 
+  const [showCredentialModal, setShowCredentialModal] = useState(false);
+  const [newLoginInput, setNewLoginInput] = useState('');
+  const [currentPasswordInput, setCurrentPasswordInput] = useState('');
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [confirmNewPasswordInput, setConfirmNewPasswordInput] = useState('');
+  const [credentialSubmitting, setCredentialSubmitting] = useState(false);
+  const [credentialMessage, setCredentialMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleUpdateCredentials = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!teacherToken) return;
+    if (newPasswordInput && newPasswordInput.length < 6) {
+      setCredentialMessage({ type: 'error', text: 'Le nouveau mot de passe doit contenir au moins 6 caractères.' });
+      return;
+    }
+    if (newPasswordInput && newPasswordInput !== confirmNewPasswordInput) {
+      setCredentialMessage({ type: 'error', text: 'Les nouveaux mots de passe ne correspondent pas.' });
+      return;
+    }
+    setCredentialSubmitting(true);
+    setCredentialMessage(null);
+    try {
+      const res = await apiRequest<{ token: string; login: string; message: string }>('/api/teacher/auth/update-credentials', {
+        method: 'POST',
+        token: teacherToken,
+        body: {
+          newLogin: newLoginInput.trim() || undefined,
+          currentPassword: currentPasswordInput.trim() || undefined,
+          newPassword: newPasswordInput.trim() || undefined,
+        },
+      });
+      setTeacherToken(res.token);
+      setCredentialMessage({ type: 'success', text: res.message || 'Identifiants mis à jour avec succès.' });
+      setCurrentPasswordInput('');
+      setNewPasswordInput('');
+      setConfirmNewPasswordInput('');
+      setNewLoginInput('');
+      setTimeout(() => {
+        setShowCredentialModal(false);
+        setCredentialMessage(null);
+      }, 2000);
+    } catch (err: any) {
+      setCredentialMessage({ type: 'error', text: err?.message || 'Erreur lors de la mise à jour des identifiants.' });
+    } finally {
+      setCredentialSubmitting(false);
+    }
+  };
+
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(''), 3500);
@@ -975,26 +1023,33 @@ export function TeacherPortal({
                 <div className="grid grid-cols-2 gap-2 mb-2">
                   <button
                     type="button"
-                    onClick={() => setAuthLoginInput('rmarwan26@alekhaaschools.com')}
+                    onClick={() => {
+                      setAuthLoginInput('Marwen03');
+                      setAuthPasswordInput('030590');
+                    }}
                     className={`px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer ${
-                      authLoginInput.toLowerCase().includes('marwan')
+                      authLoginInput.toLowerCase().includes('marwan') || authLoginInput.toLowerCase().includes('marwen')
                         ? 'border-[#0B6E8C] bg-[#EEF5F9] text-[#0F2537]'
                         : 'border-slate-200 text-slate-600'
                     }`}
                   >
-                    Marwan Mhamdi
+                    Marwen (Marwen03 / 030590)
                   </button>
                   <button
                     type="button"
-                    onClick={() => setAuthLoginInput('m.cherif@almajd-academy.sa')}
+                    onClick={() => {
+                      setAuthLoginInput('Med01');
+                      setAuthPasswordInput('120786');
+                    }}
                     className={`px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer ${
                       authLoginInput.toLowerCase().includes('cherif') ||
-                      authLoginInput.toLowerCase().includes('mohamed')
+                      authLoginInput.toLowerCase().includes('mohamed') ||
+                      authLoginInput.toLowerCase().includes('med01')
                         ? 'border-[#0B6E8C] bg-[#EEF5F9] text-[#0F2537]'
                         : 'border-slate-200 text-slate-600'
                     }`}
                   >
-                    Mohamed Cherif
+                    Mohamed (Med01 / 120786)
                   </button>
                 </div>
                 <input
@@ -1002,7 +1057,7 @@ export function TeacherPortal({
                   required
                   value={authLoginInput}
                   onChange={(e) => setAuthLoginInput(e.target.value)}
-                  placeholder="rmarwan26@alekhaaschools.com ou m.cherif@almajd-academy.sa"
+                  placeholder="Marwen03 ou Med01"
                   className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl"
                 />
               </div>
@@ -1095,6 +1150,15 @@ export function TeacherPortal({
               M. Mohamed Cherif (FR / AR)
             </button>
           </div>
+          <button
+            type="button"
+            onClick={() => setShowCredentialModal(true)}
+            title="Modifier mes identifiants privés"
+            className="px-3 py-2 bg-white border border-slate-300 hover:border-[#0B6E8C] text-slate-700 hover:text-[#0B6E8C] rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+          >
+            <KeyRound className="w-3.5 h-3.5" />
+            <span>Changer Identifiants</span>
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -3271,6 +3335,95 @@ export function TeacherPortal({
 
       {loading && (
         <div className="text-xs text-slate-500 text-center py-2">Synchronizing portal data...</div>
+      )}
+
+      {showCredentialModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div>
+                <h3 className="font-display text-lg font-bold text-[#0F2537]">Modifier vos identifiants privés</h3>
+                <p className="text-xs text-slate-500">Formateur actif : {teacherId === 'marwan' ? 'Marwen Mhamdi' : 'Mohamed Cherif'}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCredentialModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-sm font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {credentialMessage && (
+              <div className={`p-3 rounded-xl text-xs ${credentialMessage.type === 'success' ? 'bg-emerald-50 text-emerald-900 border border-emerald-200' : 'bg-red-50 text-red-900 border border-red-200'}`}>
+                {credentialMessage.text}
+              </div>
+            )}
+
+            <form onSubmit={handleUpdateCredentials} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Nouveau Login (Optionnel)</label>
+                <input
+                  type="text"
+                  value={newLoginInput}
+                  onChange={(e) => setNewLoginInput(e.target.value)}
+                  placeholder={teacherId === 'marwan' ? 'Marwen03' : 'Med01'}
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Mot de passe actuel</label>
+                <input
+                  type="password"
+                  value={currentPasswordInput}
+                  onChange={(e) => setCurrentPasswordInput(e.target.value)}
+                  placeholder="Confirmez votre mot de passe actuel"
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Nouveau mot de passe (min. 6 caractères)</label>
+                <input
+                  type="password"
+                  value={newPasswordInput}
+                  onChange={(e) => setNewPasswordInput(e.target.value)}
+                  placeholder="Laisser vide pour conserver l'actuel"
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Confirmer le nouveau mot de passe</label>
+                <input
+                  type="password"
+                  value={confirmNewPasswordInput}
+                  onChange={(e) => setConfirmNewPasswordInput(e.target.value)}
+                  placeholder="Répétez le nouveau mot de passe"
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCredentialModal(false)}
+                  className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 cursor-pointer"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={credentialSubmitting}
+                  className="px-4 py-2 bg-[#0B6E8C] hover:bg-[#08566E] text-white rounded-xl text-xs font-semibold cursor-pointer"
+                >
+                  {credentialSubmitting ? 'Enregistrement...' : 'Enregistrer'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </section>
   );

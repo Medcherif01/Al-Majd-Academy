@@ -306,14 +306,25 @@ export function CourseWorkspace({
         onBookingCreated?.(res.booking);
       }
       await onRefreshPaidCourses();
+
+      const whatsappText = `Bonjour Admin (Al-Majd Academy),
+Je souhaite valider mon inscription et mon paiement pour le cours : ${checkoutCourse.title} (${checkoutCourse.priceSar} SAR).
+Référence : ${res.order.referenceCode}
+Élève : ${user.name} (${user.email})
+Date choisie : ${chosenDateSlot} à ${chosenTimeSlot}
+Formateur choisi : ${chosenTrainerId === 'marwan' ? 'Mr. Marwan Mhamdi' : 'M. Mohamed Cherif'}
+Voici mon reçu / confirmation de virement :`;
+      const whatsappUrl = `https://wa.me/966594228783?text=${encodeURIComponent(whatsappText)}`;
+      window.open(whatsappUrl, '_blank');
+
       setEnrollMessage({
         type: 'success',
         text:
           lang === 'ar'
-            ? `تم تسجيلك في الدورة بنجاح (${res.order.referenceCode}) وإرسال التقرير للمدرب.`
+            ? `تم إرسال طلب الدفع عبر واتساب (المرجع: ${res.order.referenceCode}). يرجى إرسال إيصال الدفع للإدارة.`
             : lang === 'en'
-              ? `Enrolled (${res.order.referenceCode}). Paid report transmitted to your trainer with Meet scheduling.`
-              : `Inscription payante confirmée (${res.order.referenceCode}). Un rapport complet a été transmis au formateur choisi.`,
+              ? `Order submitted (${res.order.referenceCode}). WhatsApp opened to send payment receipt to admin.`
+              : `Commande enregistrée (${res.order.referenceCode}). WhatsApp s'est ouvert pour envoyer votre reçu de paiement à l'admin.`,
       });
       setCheckoutCourse(null);
     } catch (err: any) {
