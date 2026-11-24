@@ -13,12 +13,16 @@ export interface PastPaperItem {
   curriculum: 'American (SAT/AP)' | 'IB Diploma' | 'IGCSE & A-Level' | 'NAFES (ETEC)' | 'Qudurat & Tahsili' | 'Bac Français';
   subject: string;
   year: number;
+  examDate?: string;
   session: string;
   language: 'English' | 'Français' | 'العربية';
   pages: number;
   duration: string;
   priceSar: number;
   officialRuleSummary: string;
+  uploadedByTeacherId?: 'marwan' | 'mohamed';
+  uploadedByTeacherName?: string;
+  sourceFileName?: string;
   freePreview: PastPaperQuestion;
   fullQuestions: PastPaperQuestion[];
 }
@@ -33,6 +37,7 @@ export const PAST_PAPERS_CATALOG: PastPaperItem[] = [
     curriculum: 'American (SAT/AP)',
     subject: 'Mathematics',
     year: 2025,
+    examDate: 'Mars 2025',
     session: 'March International',
     language: 'English',
     pages: 28,
@@ -90,6 +95,7 @@ export const PAST_PAPERS_CATALOG: PastPaperItem[] = [
     curriculum: 'IB Diploma',
     subject: 'Mathematics AA HL',
     year: 2024,
+    examDate: 'Mai 2024',
     session: 'May TZ2 (Middle East)',
     language: 'English',
     pages: 34,
@@ -136,6 +142,7 @@ export const PAST_PAPERS_CATALOG: PastPaperItem[] = [
     curriculum: 'IGCSE & A-Level',
     subject: 'Physics',
     year: 2024,
+    examDate: 'Juin 2024',
     session: 'May/June Variant 2 (KSA)',
     language: 'English',
     pages: 26,
@@ -175,6 +182,7 @@ export const PAST_PAPERS_CATALOG: PastPaperItem[] = [
     curriculum: 'NAFES (ETEC)',
     subject: 'الرياضيات والعلوم',
     year: 2025,
+    examDate: 'أبريل 2025',
     session: 'الدورة الوطنية - هيئة تقويم التعليم',
     language: 'العربية',
     pages: 24,
@@ -221,6 +229,7 @@ export const PAST_PAPERS_CATALOG: PastPaperItem[] = [
     curriculum: 'Qudurat & Tahsili',
     subject: 'القدرات العامة (كمي + لفظي)',
     year: 2025,
+    examDate: 'يناير 2025',
     session: 'قياس المحوسب - نماذج محدثة',
     language: 'العربية',
     pages: 42,
@@ -267,6 +276,7 @@ export const PAST_PAPERS_CATALOG: PastPaperItem[] = [
     curriculum: 'Bac Français',
     subject: 'Mathématiques Spécialité',
     year: 2024,
+    examDate: 'Juin 2024',
     session: 'Centres Étrangers / Arabie Saoudite',
     language: 'Français',
     pages: 30,
@@ -305,6 +315,7 @@ export interface TrainerProfile {
   id: 'marwan' | 'mohamed';
   name: string;
   roleTitle: string;
+  photoUrl: string;
   languages: ('English' | 'Français' | 'العربية')[];
   curricula: string[];
   hourlyRateSar: number;
@@ -313,6 +324,8 @@ export interface TrainerProfile {
   bioFr: string;
   bioEn: string;
   bioAr: string;
+  experiences: string[];
+  skills: string[];
   availabilitySlots: string[];
 }
 
@@ -321,6 +334,7 @@ export const TRAINERS: TrainerProfile[] = [
     id: 'marwan',
     name: 'Marwan Mhamdi',
     roleTitle: 'Lead International Tutor — All English Tracks',
+    photoUrl: '/src/assets/images/trainer_marwan_mhamdi_1795527476961.jpg',
     languages: ['English'],
     curricula: ['Digital SAT & ACT', 'AP Calculus / Physics / Chem', 'IB Diploma (HL/SL)', 'Cambridge IGCSE & A-Level', 'GAT (Qudurat English)'],
     hourlyRateSar: 190,
@@ -332,12 +346,25 @@ export const TRAINERS: TrainerProfile[] = [
       'Lead specialist for every English-language international track in Saudi Arabia: Digital SAT, AP STEM, IB Diploma HL/SL, Cambridge IGCSE/A-Level, and English GAT. Focused on official mark-scheme precision and timed exam strategy.',
     bioAr:
       'مدرب رئيسي لجميع المسارات الدولية باللغة الإنجليزية في المملكة: السات الرقمي، AP، البكالوريا الدولية IB، كامبريدج IGCSE و A-Level، والقدرات باللغة الإنجليزية.',
+    experiences: [
+      '9+ ans d’enseignement dans les écoles internationales de Riyad & Djeddah (British & American Sections)',
+      'Plus de 420 élèves accompagnés vers des scores 1450+ au Digital SAT & 6-7 en IB Math AA HL',
+      'Formateur certifié College Board (AP STEM) & Cambridge Assessment (IGCSE 0580 / 0625)',
+    ],
+    skills: [
+      'Digital SAT Adaptive Strategy & Desmos',
+      'IB Math AA HL/SL & IA Coaching',
+      'IGCSE / A-Level Mark Scheme Precision',
+      'IELTS Academic Band 8+ & STEP',
+      'GAT Quantitative Rapid Solving',
+    ],
     availabilitySlots: ['Dimanche 17:00 AST', 'Lundi 18:30 AST', 'Mercredi 17:30 AST', 'Jeudi 19:00 AST', 'Samedi 11:00 AST'],
   },
   {
     id: 'mohamed',
     name: 'Mohamed Cherif',
     roleTitle: 'Formateur Principal — Cursus Français & Arabe',
+    photoUrl: '/src/assets/images/trainer_mohamed_cherif_1795527477326.jpg',
     languages: ['Français', 'العربية'],
     curricula: ['Baccalauréat Français (AEFE)', 'Brevet (DNB)', 'IB French B', 'NAFES / نافس (ETEC)', 'Qudurat (القدرات العامة)', 'Tahsili (التحصيلي)'],
     hourlyRateSar: 180,
@@ -349,6 +376,18 @@ export const TRAINERS: TrainerProfile[] = [
       'Lead specialist for all French and Arabic curricula: AEFE French Baccalauréat & Brevet, IB French B, plus intensive preparation for Saudi national assessments NAFES, Qudurat (GAT), and Tahsili (SAAT).',
     bioAr:
       'المدرب الرئيسي للمسارات الفرنسية والعربية: البكالوريا الفرنسية (AEFE)، البريفيه، IB فرنسي، بالإضافة إلى التأهيل المتقن لاختبارات نافس (ETEC) والقدرات العامة والتحصيلي (قياس).',
+    experiences: [
+      '10+ ans d’encadrement des classes de 3e, Première et Terminale AEFE en Arabie Saoudite',
+      'Spécialiste certifié des référentiels ETEC (NAFES G3/G6/G9) et Qiyas (Qudurat & Tahsili)',
+      '96% de réussite aux mentions Très Bien / Bien et scores 92+ aux épreuves Qiyas',
+    ],
+    skills: [
+      'Bac Français AEFE & DNB Brevet',
+      'NAFES (نافس ETEC) G3 · G6 · G9',
+      'Qudurat & Tahsili Sans Calculatrice',
+      'IB French B & Expression Écrite',
+      'Remédiation Ciblée & Méthodologie',
+    ],
     availabilitySlots: ['Dimanche 18:30 AST', 'Mardi 17:00 AST', 'Mercredi 19:00 AST', 'Vendredi 16:00 AST', 'Samedi 14:00 AST'],
   },
 ];

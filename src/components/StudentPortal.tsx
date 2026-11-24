@@ -7,6 +7,7 @@ import {
   ExternalLink,
   FileCheck2,
   GraduationCap,
+  Link2,
   Lock,
   LogOut,
   Sparkles,
@@ -72,6 +73,8 @@ export function StudentPortal({
   const t = TRANSLATIONS[lang];
   const [meetBusyId, setMeetBusyId] = useState<string | null>(null);
   const [meetError, setMeetError] = useState<string>('');
+  const [manualMeetDrafts, setManualMeetDrafts] = useState<Record<string, string>>({});
+  const [savingMeetId, setSavingMeetId] = useState<string | null>(null);
 
   if (!user || !token) {
     return (
@@ -131,6 +134,29 @@ export function StudentPortal({
       setMeetError(err.message || 'Impossible de générer la salle Google Meet.');
     } finally {
       setMeetBusyId(null);
+    }
+  };
+
+  const handleSaveManualMeet = async (bookingId: string) => {
+    const raw = (manualMeetDrafts[bookingId] || '').trim();
+    if (!token || !raw) return;
+    setMeetError('');
+    setSavingMeetId(bookingId);
+    try {
+      const res = await apiRequest<{ booking: BookingItem }>(
+        `/api/bookings/${encodeURIComponent(bookingId)}/meet-link`,
+        {
+          method: 'PATCH',
+          token,
+          body: { meetLink: raw },
+        }
+      );
+      setManualMeetDrafts((prev) => ({ ...prev, [bookingId]: '' }));
+      onBookingUpdated?.(res.booking);
+    } catch (err: any) {
+      setMeetError(err.message || 'Lien Google Meet invalide.');
+    } finally {
+      setSavingMeetId(null);
     }
   };
 
@@ -529,19 +555,52 @@ export function StudentPortal({
                         )}
                       </>
                     ) : b.paid ? (
-                      <button
-                        type="button"
-                        disabled={meetBusyId === b.id}
-                        onClick={() => handleGenerateMeetForBooking(b.id)}
-                        className="px-3 py-1.5 bg-[#0F2537] hover:bg-[#0B6E8C] text-white text-xs font-semibold rounded-lg inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                      >
-                        <Video className="w-3.5 h-3.5" />
-                        <span>
-                          {meetBusyId === b.id
-                            ? 'Création Google Meet...'
-                            : 'Connecter Google & Générer le lien Meet'}
-                        </span>
-                      </button>
+                      <div className="w-full space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={meetBusyId === b.id}
+                            onClick={() => handleGenerateMeetForBooking(b.id)}
+                            className="px-3 py-1.5 bg-[#0F2537] hover:bg-[#0B6E8C] text-white text-xs font-semibold rounded-lg inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          >
+                            <Video className="w-3.5 h-3.5" />
+                            <span>
+                              {meetBusyId === b.id
+                                ? 'Création Google Meet...'
+                                : 'Connecter Google & Générer le lien Meet'}
+                            </span>
+                          </button>
+                          <a
+                            href="https://meet.google.com/new"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-1.5 bg-white border border-slate-300 hover:border-[#0B6E8C] text-[#0F2537] text-xs font-semibold rounded-lg inline-flex items-center gap-1"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            <span>Ouvrir Google Meet</span>
+                          </a>
+                        </div>
+                        <div className="flex gap-2">
+                          <input
+                            type="url"
+                            value={manualMeetDrafts[b.id] || ''}
+                            onChange={(e) =>
+                              setManualMeetDrafts((prev) => ({ ...prev, [b.id]: e.target.value }))
+                            }
+                            placeholder="Ou collez https://meet.google.com/xxx-xxxx-xxx"
+                            className="flex-1 px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
+                          />
+                          <button
+                            type="button"
+                            disabled={savingMeetId === b.id || !(manualMeetDrafts[b.id] || '').trim()}
+                            onClick={() => handleSaveManualMeet(b.id)}
+                            className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold rounded-lg inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                          >
+                            <Link2 className="w-3 h-3" />
+                            <span>{savingMeetId === b.id ? '...' : 'Enregistrer'}</span>
+                          </button>
+                        </div>
+                      </div>
                     ) : null}
                   </div>
                 </div>

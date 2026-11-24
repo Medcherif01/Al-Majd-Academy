@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  Award,
+  Briefcase,
   Calendar,
-  CalendarCheck,
   CheckCircle2,
   CreditCard,
   ExternalLink,
   Globe2,
+  Link2,
   Plus,
   Video,
 } from 'lucide-react';
@@ -52,6 +54,36 @@ const DURATION_OPTIONS: { minutes: 30 | 60 | 90 | 120 | 300; labelFr: string; la
   { minutes: 300, labelFr: '300 min (Pack 5 heures)', labelEn: '300 min (5-Hour Pack)', labelAr: '300 دقيقة (باقة 5 ساعات)' },
 ];
 
+function getTodayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function getDefaultDateIso(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 2);
+  return d.toISOString().slice(0, 10);
+}
+
+const WEEKDAY_MAP: { pattern: RegExp; day: number }[] = [
+  { pattern: /dimanche|sunday|الأحد/i, day: 0 },
+  { pattern: /lundi|monday|الإثنين/i, day: 1 },
+  { pattern: /mardi|tuesday|الثلاثاء/i, day: 2 },
+  { pattern: /mercredi|wednesday|الأربعاء/i, day: 3 },
+  { pattern: /jeudi|thursday|الخميس/i, day: 4 },
+  { pattern: /vendredi|friday|الجمعة/i, day: 5 },
+  { pattern: /samedi|saturday|السبت/i, day: 6 },
+];
+
+function getNextDateForSlotLabel(slot: string, fallbackIso: string): string {
+  const match = WEEKDAY_MAP.find((w) => w.pattern.test(slot));
+  if (!match) return fallbackIso;
+  const now = new Date();
+  const diff = (match.day - now.getDay() + 7) % 7 || 7;
+  const target = new Date(now);
+  target.setDate(now.getDate() + diff);
+  return target.toISOString().slice(0, 10);
+}
+
 export function TutoringSection({
   lang,
   trainers,
@@ -70,10 +102,10 @@ export function TutoringSection({
   const [curriculum, setCurriculum] = useState<string>('Digital SAT & ACT');
   const [subject, setSubject] = useState<string>('Mathematics');
   const [durationMinutes, setDurationMinutes] = useState<30 | 60 | 90 | 120 | 300>(60);
-  const [dateSlot, setDateSlot] = useState<string>('2026-11-28');
-  const [timeSlot, setTimeSlot] = useState<string>('17:00 AST');
+  const [dateSlot, setDateSlot] = useState<string>(getDefaultDateIso);
+  const [timeValue, setTimeValue] = useState<string>('17:00');
   const [studentName, setStudentName] = useState<string>(user?.name || '');
-  const [paymentMethod, setPaymentMethod] = useState<string>('Mada · Saudi Payments');
+  const [paymentMethod, setPaymentMethod] = useState<string>('Mada');
   const [notes, setNotes] = useState<string>('');
 
   // Weaknesses & Themes attached to teacher report
@@ -89,9 +121,13 @@ export function TutoringSection({
 
   const [submitting, setSubmitting] = useState(false);
   const [generatingMeet, setGeneratingMeet] = useState(false);
+  const [manualMeetUrl, setManualMeetUrl] = useState('');
+  const [savingManualMeet, setSavingManualMeet] = useState(false);
   const [error, setError] = useState('');
   const [meetWarning, setMeetWarning] = useState('');
   const [confirmedBooking, setConfirmedBooking] = useState<BookingItem | null>(null);
+
+  const timeSlot = `${timeValue} AST`;
 
   useEffect(() => {
     const unsub = initGoogleWorkspaceAuth(
@@ -255,6 +291,15 @@ export function TutoringSection({
     setCustomTheme('');
   };
 
+  const applySuggestedSlot = (slot: string) => {
+    const timeMatch = slot.match(/(\d{1,2}:\d{2})/);
+    if (timeMatch) {
+      const [h, m] = timeMatch[1].split(':');
+      setTimeValue(`${h.padStart(2, '0')}:${m}`);
+    }
+    setDateSlot(getNextDateForSlotLabel(slot, dateSlot));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -338,6 +383,31 @@ export function TutoringSection({
     }
   };
 
+  const handleSaveManualMeetLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!confirmedBooking || !token || !manualMeetUrl.trim()) return;
+    setError('');
+    setSavingManualMeet(true);
+    try {
+      const res = await apiRequest<{ booking: BookingItem }>(
+        `/api/bookings/${encodeURIComponent(confirmedBooking.id)}/meet-link`,
+        {
+          method: 'PATCH',
+          token,
+          body: { meetLink: manualMeetUrl.trim() },
+        }
+      );
+      setConfirmedBooking(res.booking);
+      setManualMeetUrl('');
+      setMeetWarning('');
+      onBookingUpdated?.(res.booking);
+    } catch (err: any) {
+      setError(err.message || 'Impossible d’enregistrer le lien Google Meet.');
+    } finally {
+      setSavingManualMeet(false);
+    }
+  };
+
   return (
     <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14">
       <div className="mb-10 max-w-3xl">
@@ -354,12 +424,13 @@ export function TutoringSection({
         <p className="mt-3 text-base text-slate-600 leading-relaxed">{t.tutorsSubtitle}</p>
       </div>
 
-      {/* Two Dedicated Trainer Profiles */}
+      {/* Two Dedicated Trainer Profiles (Live Photo, Experiences & Skills from Teacher Portal) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-12">
         {trainers.map((trainer) => {
           const isSelected = trainer.id === activeTrainer.id;
           const bio =
             lang === 'ar' ? trainer.bioAr : lang === 'en' ? trainer.bioEn : trainer.bioFr;
+          const photoSrc = trainer.photoUrl || TRAINER_IMAGES[trainer.id];
 
           return (
             <div
@@ -372,7 +443,7 @@ export function TutoringSection({
                 <div className="flex flex-col sm:flex-row items-start gap-5 mb-5">
                   <div className="w-24 h-24 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 shrink-0">
                     <img
-                      src={TRAINER_IMAGES[trainer.id]}
+                      src={photoSrc}
                       alt={trainer.name}
                       referrerPolicy="no-referrer"
                       className="w-full h-full object-cover"
@@ -393,6 +464,53 @@ export function TutoringSection({
                 <p className="text-sm text-slate-700 leading-relaxed mb-4">{bio}</p>
 
                 <div className="text-xs text-slate-500 mb-4">{trainer.credentials}</div>
+
+                {/* Experiences */}
+                {trainer.experiences && trainer.experiences.length > 0 && (
+                  <div className="mb-4 p-3.5 rounded-xl bg-[#F8FAFC] border border-slate-200/80 space-y-1.5">
+                    <div className="text-xs font-semibold text-[#0F2537] flex items-center gap-1.5">
+                      <Briefcase className="w-3.5 h-3.5 text-[#0B6E8C]" />
+                      <span>
+                        {lang === 'ar'
+                          ? 'الخبرات الأكاديمية:'
+                          : lang === 'en'
+                            ? 'Teaching Experience:'
+                            : 'Expériences & Parcours :'}
+                      </span>
+                    </div>
+                    <ul className="space-y-1 text-xs text-slate-700">
+                      {trainer.experiences.map((exp, idx) => (
+                        <li key={idx}>• {exp}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Attractive Skills */}
+                {trainer.skills && trainer.skills.length > 0 && (
+                  <div className="mb-4">
+                    <div className="text-xs font-semibold text-[#0F2537] mb-2 flex items-center gap-1.5">
+                      <Award className="w-3.5 h-3.5 text-[#0B6E8C]" />
+                      <span>
+                        {lang === 'ar'
+                          ? 'المهارات والتخصصات:'
+                          : lang === 'en'
+                            ? 'Key Skills & Specialties:'
+                            : 'Compétences Clés :'}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {trainer.skills.map((skill, idx) => (
+                        <span
+                          key={idx}
+                          className="px-2.5 py-1 rounded-lg bg-[#EEF5F9] border border-[#BFD8E6] text-[11px] font-semibold text-[#0F2537]"
+                        >
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="pt-4 border-t border-slate-100">
                   <div className="text-xs font-semibold text-slate-800 mb-2">
@@ -457,8 +575,8 @@ export function TutoringSection({
               {lang === 'ar'
                 ? 'اختر التاريخ والوقت والمدة، وأرفق نقاط الضعف والدروس المطلوبة؛ يُرسل التقرير للمدرب ويُنشأ رابط Google Meet فور الدفع.'
                 : lang === 'en'
-                  ? 'Select date, time & duration, attach weaknesses and target lessons; a detailed report is sent to the teacher with an instant Google Meet link generated after payment.'
-                  : 'Choisissez la date, l’horaire, la durée, vos points faibles et les leçons à travailler : le rapport est transmis au formateur et le lien Google Meet est généré après paiement.'}
+                  ? 'Pick any convenient date, time & duration, attach weaknesses and target lessons; a detailed report is sent to the teacher with Google Meet generated after payment.'
+                  : 'Choisissez librement la date et l’horaire qui vous conviennent, la durée, vos points faibles et les leçons à travailler : le rapport est transmis au formateur et le lien Google Meet est généré après paiement.'}
             </p>
           </div>
           <div className="font-mono text-2xl font-bold text-[#0B6E8C] tabular-nums shrink-0">
@@ -521,21 +639,52 @@ export function TutoringSection({
                 )}
               </div>
             ) : (
-              <div className="pt-3 border-t border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <span className="text-xs text-emerald-900">
-                  {meetWarning
-                    ? `${meetWarning} — Cliquez ci-contre pour générer le lien Google Meet.`
-                    : 'Votre paiement est validé. Connectez Google pour générer le lien Google Meet partagé avec votre formateur.'}
-                </span>
-                <button
-                  type="button"
-                  disabled={generatingMeet}
-                  onClick={handleGenerateMeetPostPayment}
-                  className="px-4 py-2.5 bg-[#0F2537] hover:bg-[#0B6E8C] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2 shrink-0 cursor-pointer"
-                >
-                  <Video className="w-4 h-4" />
-                  <span>{generatingMeet ? 'Création Google Meet...' : 'Générer le lien Google Meet'}</span>
-                </button>
+              <div className="pt-3 border-t border-emerald-200 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <span className="text-xs text-emerald-900">
+                    {meetWarning
+                      ? `${meetWarning} — Cliquez ci-contre pour générer automatiquement la salle Google Meet.`
+                      : 'Votre paiement est validé. Connectez Google pour générer le lien Google Meet partagé avec votre formateur.'}
+                  </span>
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      disabled={generatingMeet}
+                      onClick={handleGenerateMeetPostPayment}
+                      className="px-4 py-2.5 bg-[#0F2537] hover:bg-[#0B6E8C] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2 cursor-pointer"
+                    >
+                      <Video className="w-4 h-4" />
+                      <span>{generatingMeet ? 'Création Google Meet...' : 'Générer le lien Google Meet'}</span>
+                    </button>
+                    <a
+                      href="https://meet.google.com/new"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3.5 py-2.5 bg-white border border-emerald-300 hover:border-[#0B6E8C] text-[#0F2537] text-xs font-semibold rounded-xl inline-flex items-center gap-1.5"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Ouvrir Google Meet directement</span>
+                    </a>
+                  </div>
+                </div>
+
+                <form onSubmit={handleSaveManualMeetLink} className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="url"
+                    value={manualMeetUrl}
+                    onChange={(e) => setManualMeetUrl(e.target.value)}
+                    placeholder="Ou collez le lien Google Meet créé (https://meet.google.com/xxx-xxxx-xxx) pour le partager au formateur..."
+                    className="flex-1 px-3 py-2 text-xs bg-white border border-emerald-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0B6E8C]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={savingManualMeet || !manualMeetUrl.trim()}
+                    className="px-4 py-2 bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <Link2 className="w-3.5 h-3.5" />
+                    <span>{savingManualMeet ? 'Enregistrement...' : 'Associer le lien Meet'}</span>
+                  </button>
+                </form>
               </div>
             )}
           </div>
@@ -601,7 +750,7 @@ export function TutoringSection({
             </div>
           </div>
 
-          {/* Row 2: Subject, Exact Duration, Date & Time */}
+          {/* Row 2: Subject, Exact Duration, Flexible Date & Free Time Selection */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
@@ -650,11 +799,12 @@ export function TutoringSection({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  {lang === 'ar' ? 'التاريخ' : lang === 'en' ? 'Date' : 'Date souhaitée'}
+                  {lang === 'ar' ? 'التاريخ المناسب لك' : lang === 'en' ? 'Your Available Date' : 'Date disponible'}
                 </label>
                 <input
                   type="date"
                   required
+                  min={getTodayIso()}
                   value={dateSlot}
                   onChange={(e) => setDateSlot(e.target.value)}
                   className="w-full px-3 py-2.5 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0B6E8C]"
@@ -662,22 +812,41 @@ export function TutoringSection({
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  {lang === 'ar' ? 'الوقت' : lang === 'en' ? 'Time (AST)' : 'Horaire (AST)'}
+                  {lang === 'ar' ? 'الوقت المناسب (AST)' : lang === 'en' ? 'Preferred Time (AST)' : 'Heure exacte (AST)'}
                 </label>
-                <select
-                  value={timeSlot}
-                  onChange={(e) => setTimeSlot(e.target.value)}
+                <input
+                  type="time"
+                  required
+                  value={timeValue}
+                  onChange={(e) => setTimeValue(e.target.value)}
                   className="w-full px-3 py-2.5 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-[#0B6E8C]"
-                >
-                  {activeTrainer.availabilitySlots.map((slot) => (
-                    <option key={slot} value={slot}>
-                      {slot}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
             </div>
           </div>
+
+          {/* Clickable Trainer Availability Suggestions */}
+          {activeTrainer.availabilitySlots && activeTrainer.availabilitySlots.length > 0 && (
+            <div className="p-3.5 rounded-xl bg-[#F8FAFC] border border-slate-200 flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-semibold text-slate-600 me-1">
+                {lang === 'ar'
+                  ? 'أوقات مقترحة من المدرب (أو اختر أي وقت أعلاه):'
+                  : lang === 'en'
+                    ? 'Suggested teacher slots (or pick any date & time above):'
+                    : 'Créneaux suggérés par le formateur (ou choisissez librement ci-dessus) :'}
+              </span>
+              {activeTrainer.availabilitySlots.map((slot) => (
+                <button
+                  key={slot}
+                  type="button"
+                  onClick={() => applySuggestedSlot(slot)}
+                  className="px-2.5 py-1 rounded-lg bg-white border border-slate-300 hover:border-[#0B6E8C] text-[11px] font-medium text-[#0F2537] cursor-pointer transition-colors"
+                >
+                  {slot}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Row 3: Weaknesses & Target Lessons/Themes sent to Teacher */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2 border-t border-slate-200">

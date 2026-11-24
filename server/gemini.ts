@@ -1,4 +1,6 @@
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
+import mammoth from 'mammoth';
+import type { PastPaperItem, PastPaperQuestion } from './catalog.ts';
 
 export interface GenerateExamInput {
   curriculum: string;
@@ -26,6 +28,30 @@ export interface GeneratedExamPayload {
   }[];
 }
 
+export interface ExtractPastPaperInput {
+  fileBase64: string;
+  mimeType: string;
+  fileName: string;
+  curriculum: PastPaperItem['curriculum'];
+  subject: string;
+  year: number;
+  examDate: string;
+  session: string;
+  language: 'English' | 'Français' | 'العربية';
+  priceSar: number;
+  duration?: string;
+  titleOverride?: string;
+}
+
+export interface ExtractedPastPaperPayload {
+  title: string;
+  code: string;
+  duration: string;
+  pages: number;
+  officialRuleSummary: string;
+  fullQuestions: PastPaperQuestion[];
+}
+
 export function getGeminiClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
@@ -33,7 +59,9 @@ export function getGeminiClient(): GoogleGenAI {
   }
   return new GoogleGenAI({
     apiKey,
+    apiVersion: 'v1beta',
     httpOptions: {
+      apiVersion: 'v1beta',
       headers: {
         'User-Agent': 'aistudio-build',
       },
@@ -41,7 +69,7 @@ export function getGeminiClient(): GoogleGenAI {
   });
 }
 
-function isTransientGeminiError(err: unknown): boolean {
+function isTransientOrFallbackError(err: unknown): boolean {
   const raw =
     err instanceof Error
       ? `${err.message} ${JSON.stringify(err)}`
@@ -50,12 +78,15 @@ function isTransientGeminiError(err: unknown): boolean {
   return (
     upper.includes('503') ||
     upper.includes('429') ||
+    upper.includes('404') ||
     upper.includes('UNAVAILABLE') ||
+    upper.includes('NOT_FOUND') ||
     upper.includes('RESOURCE_EXHAUSTED') ||
     upper.includes('HIGH DEMAND') ||
     upper.includes('OVERLOADED') ||
     upper.includes('TIMEOUT') ||
-    upper.includes('ECONNRESET')
+    upper.includes('ECONNRESET') ||
+    upper.includes('EMPTY_GEMINI_RESPONSE')
   );
 }
 
@@ -72,24 +103,30 @@ export class GeminiUnavailableError extends Error {
 }
 
 /**
- * Calls Gemini with exponential backoff retries on the primary model (`gemini-4-hydrogen`)
- * and automatic fallback to `gemini-3.1-flash-lite` (valid free-tier model, omitting thinkingConfig)
- * whenever upstream experiences temporary 503/429 high-demand spikes.
+ * Calls Gemini with automatic model resilience:
+ * Tries `gemini-4-hydrogen`, falls back immediately to `gemini-2.5-flash` (active low-latency
+ * structured JSON & multimodal PDF model) and `gemini-3.1-flash-lite` whenever an upstream
+ * model experiences 503 high-demand spikes.
  */
 export async function generateContentWithResilience(
   ai: GoogleGenAI,
   params: {
-    contents: string;
+    contents: string | Record<string, any> | Array<Record<string, any>>;
     systemInstruction?: string;
     useThinkingMedium?: boolean;
     responseMimeType?: string;
     responseSchema?: any;
   }
 ) {
-  const attempts: { model: 'gemini-4-hydrogen' | 'gemini-3.1-flash-lite'; delayMs: number; withThinking: boolean }[] = [
+  const attempts: {
+    model: 'gemini-4-hydrogen' | 'gemini-2.5-flash' | 'gemini-3.1-flash-lite';
+    delayMs: number;
+    withThinking: boolean;
+  }[] = [
     { model: 'gemini-4-hydrogen', delayMs: 0, withThinking: Boolean(params.useThinkingMedium) },
-    { model: 'gemini-3.1-flash-lite', delayMs: 400, withThinking: false },
-    { model: 'gemini-3.1-flash-lite', delayMs: 900, withThinking: false },
+    { model: 'gemini-2.5-flash', delayMs: 150, withThinking: false },
+    { model: 'gemini-3.1-flash-lite', delayMs: 300, withThinking: false },
+    { model: 'gemini-2.5-flash', delayMs: 700, withThinking: false },
   ];
 
   let lastError: unknown = null;
@@ -100,9 +137,6 @@ export async function generateContentWithResilience(
     }
     try {
       const config: Record<string, any> = {};
-      if (params.systemInstruction) {
-        config.systemInstruction = params.systemInstruction;
-      }
       if (attempt.withThinking && attempt.model === 'gemini-4-hydrogen') {
         config.thinkingConfig = { thinkingLevel: ThinkingLevel.MEDIUM };
       }
@@ -113,9 +147,23 @@ export async function generateContentWithResilience(
         config.responseSchema = params.responseSchema;
       }
 
+      let finalContents: any = params.contents;
+      if (params.systemInstruction) {
+        if (typeof params.contents === 'string') {
+          finalContents = `${params.systemInstruction}\n\n${params.contents}`;
+        } else if (Array.isArray(params.contents)) {
+          finalContents = [{ text: params.systemInstruction }, ...params.contents];
+        } else if (params.contents && Array.isArray(params.contents.parts)) {
+          finalContents = {
+            ...params.contents,
+            parts: [{ text: params.systemInstruction }, ...params.contents.parts],
+          };
+        }
+      }
+
       const response = await ai.models.generateContent({
         model: attempt.model,
-        contents: params.contents,
+        contents: finalContents,
         config,
       });
 
@@ -126,17 +174,17 @@ export async function generateContentWithResilience(
       return response;
     } catch (err) {
       lastError = err;
-      if (!isTransientGeminiError(err) && (err as Error)?.message !== 'EMPTY_GEMINI_RESPONSE') {
+      if (!isTransientOrFallbackError(err)) {
         throw err;
       }
       console.warn(
-        `Gemini transient failure on ${attempt.model}, attempting next fallback/retry:`,
+        `Gemini fallback from ${attempt.model}:`,
         (err as Error)?.message || err
       );
     }
   }
 
-  if (isTransientGeminiError(lastError)) {
+  if (isTransientOrFallbackError(lastError)) {
     throw new GeminiUnavailableError(
       'Le service Gemini connaît actuellement un pic de demande temporaire (503). Veuillez réessayer dans quelques secondes.'
     );
@@ -240,6 +288,163 @@ Ensure mathematical clarity (clean readable notation like x^2, sqrt(x), fraction
 
   parsed.totalMarks = parsed.questions.reduce((sum, q) => sum + q.points, 0);
   return parsed;
+}
+
+/**
+ * Processes an uploaded PDF or Word (.docx) exam file with Gemini, faithfully reconstructing
+ * the EXACT same exam verbatim (same questions, sub-questions, options, marks, and corrections),
+ * preserving the exam date/year and subject so it can be published in HTML format.
+ */
+export async function extractExactPastPaperWithGemini(
+  input: ExtractPastPaperInput
+): Promise<ExtractedPastPaperPayload> {
+  const ai = getGeminiClient();
+
+  const lowerName = input.fileName.toLowerCase();
+  const cleanBase64 = input.fileBase64.replace(/^data:[^;]+;base64,/, '').trim();
+  const buffer = Buffer.from(cleanBase64, 'base64');
+
+  const isPdf =
+    input.mimeType === 'application/pdf' || lowerName.endsWith('.pdf');
+  const isDocx =
+    input.mimeType.includes('wordprocessingml') ||
+    lowerName.endsWith('.docx');
+  const isPlainText =
+    input.mimeType.startsWith('text/') ||
+    lowerName.endsWith('.txt') ||
+    lowerName.endsWith('.md');
+
+  let extractedDocumentText = '';
+
+  if (isDocx) {
+    const res = await mammoth.extractRawText({ buffer });
+    extractedDocumentText = (res.value || '').trim();
+    if (!extractedDocumentText) {
+      throw new Error('Le fichier Word (.docx) semble vide ou illisible.');
+    }
+  } else if (isPlainText) {
+    extractedDocumentText = buffer.toString('utf8').trim();
+    if (!extractedDocumentText) {
+      throw new Error('Le fichier texte importé est vide.');
+    }
+  } else if (!isPdf) {
+    // Attempt best-effort UTF-8 extraction for legacy .doc or reject clearly if binary gibberish
+    const utf8 = buffer.toString('utf8').replace(/[^\x20-\x7E\u0600-\u06FF\u00C0-\u024F\n\r\t]/g, ' ').trim();
+    if (utf8.length < 40) {
+      throw new Error('Format non pris en charge. Veuillez importer un fichier PDF (.pdf) ou Word (.docx).');
+    }
+    extractedDocumentText = utf8;
+  }
+
+  const systemInstruction = `You are a meticulous academic archival transcriber for Al-Majd International Academy.
+Your ONLY task is to convert the uploaded official exam document into a structured JSON representation of the EXACT SAME EXAM.
+
+STRICT VERBATIM PRESERVATION RULES:
+1. NEVER invent, alter, simplify, paraphrase, or substitute questions. Every question, sub-question (a, b, c...), multiple-choice option (A, B, C, D), numerical value, equation, and passage MUST match the uploaded document word-for-word.
+2. Preserve the original question numbering and exact mark allocations.
+3. If the document includes a mark scheme / correction / answer key, transcribe that exact official answer & working verbatim in "markScheme". Only if the document has no answer key provided, write a concise, mathematically accurate solution directly solving that exact verbatim question in "markScheme" and clearly note "Correction rédigée à partir de l'énoncé officiel".
+4. Preserve the exact language of the exam (${input.language}).
+5. Include all instructions/rules from the exam header in "officialRuleSummary".`;
+
+  const metadataHeader = `Document metadata supplied by the Teacher Admin:
+- File Name: ${input.fileName}
+- Category / Exam System: ${input.curriculum}
+- Subject: ${input.subject}
+- Exam Year: ${input.year}
+- Exam Date / Session: ${input.examDate || input.session} (${input.session})
+- Language: ${input.language}
+${input.titleOverride ? `- Preferred Title: ${input.titleOverride}` : ''}
+
+Extract ALL questions from the uploaded exam verbatim so it renders identically in HTML.`;
+
+  const contents = isPdf
+    ? {
+        parts: [
+          {
+            inlineData: {
+              mimeType: 'application/pdf',
+              data: cleanBase64,
+            },
+          },
+          {
+            text: `${metadataHeader}\n\nTranscribe EVERY question from this PDF exam verbatim into the JSON schema.`,
+          },
+        ],
+      }
+    : `${metadataHeader}\n\n--- UPLOADED EXAM DOCUMENT TEXT START ---\n${extractedDocumentText.slice(0, 45000)}\n--- UPLOADED EXAM DOCUMENT TEXT END ---\n\nTranscribe EVERY question from the text above verbatim into the JSON schema.`;
+
+  const response = await generateContentWithResilience(ai, {
+    contents,
+    systemInstruction,
+    useThinkingMedium: false,
+    responseMimeType: 'application/json',
+    responseSchema: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING, description: 'Exact exam title including subject and year/date.' },
+        code: { type: Type.STRING, description: 'Short official exam reference code (e.g., IB-MATH-2024).' },
+        duration: { type: Type.STRING, description: 'Exam duration string from header (e.g., 90 min).' },
+        pages: { type: Type.INTEGER, description: 'Estimated page count.' },
+        officialRuleSummary: {
+          type: Type.STRING,
+          description: 'Verbatim exam instructions, rules, calculator policy from the document header.',
+        },
+        fullQuestions: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              number: { type: Type.INTEGER },
+              marks: { type: Type.INTEGER },
+              prompt: {
+                type: Type.STRING,
+                description: 'Exact verbatim question text including any sub-parts and MCQ choices.',
+              },
+              markScheme: {
+                type: Type.STRING,
+                description: 'Official mark scheme / correction matching this exact question.',
+              },
+              examinerNote: {
+                type: Type.STRING,
+                description: 'Examiner marking note or common pitfall.',
+              },
+            },
+            required: ['number', 'marks', 'prompt', 'markScheme', 'examinerNote'],
+          },
+        },
+      },
+      required: ['title', 'code', 'duration', 'pages', 'officialRuleSummary', 'fullQuestions'],
+    },
+  });
+
+  const parsed = JSON.parse((response.text ?? '').trim()) as ExtractedPastPaperPayload;
+  if (!Array.isArray(parsed.fullQuestions) || parsed.fullQuestions.length === 0) {
+    throw new Error('Gemini n’a détecté aucune question exploitable dans ce document.');
+  }
+
+  return {
+    title:
+      (input.titleOverride && input.titleOverride.trim()) ||
+      parsed.title ||
+      `${input.subject} — ${input.curriculum} (${input.examDate || input.year})`,
+    code:
+      (parsed.code || `${input.curriculum.slice(0, 4)}-${input.year}`)
+        .toUpperCase()
+        .replace(/[^A-Z0-9_-]/g, '-')
+        .slice(0, 24),
+    duration: input.duration?.trim() || parsed.duration || '90 min',
+    pages: Math.max(1, Number(parsed.pages) || Math.max(2, parsed.fullQuestions.length * 2)),
+    officialRuleSummary:
+      parsed.officialRuleSummary ||
+      `${input.curriculum} · ${input.subject} · Date/Année : ${input.examDate || input.year}`,
+    fullQuestions: parsed.fullQuestions.map((q, idx) => ({
+      number: Number(q.number) || idx + 1,
+      marks: Math.max(1, Number(q.marks) || 2),
+      prompt: String(q.prompt || '').trim(),
+      markScheme: String(q.markScheme || '').trim(),
+      examinerNote: String(q.examinerNote || 'Conforme au barème officiel.').trim(),
+    })),
+  };
 }
 
 export async function evaluateWritingWithGemini(input: {

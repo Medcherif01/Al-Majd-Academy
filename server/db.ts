@@ -1,5 +1,11 @@
 import mongoose, { Schema, type Model } from 'mongoose';
 import crypto from 'crypto';
+import {
+  PAST_PAPERS_CATALOG,
+  TRAINERS,
+  type PastPaperItem,
+  type TrainerProfile,
+} from './catalog.ts';
 
 export interface UserRecord {
   id: string;
@@ -404,6 +410,51 @@ const DemoReportSchema = new Schema(
   { timestamps: true }
 );
 
+const PastPaperSchema = new Schema(
+  {
+    paperId: { type: String, required: true, unique: true, index: true },
+    code: { type: String, required: true },
+    title: { type: String, required: true },
+    curriculum: { type: String, required: true },
+    subject: { type: String, required: true },
+    year: { type: Number, required: true },
+    examDate: { type: String, default: '' },
+    session: { type: String, required: true },
+    language: { type: String, required: true },
+    pages: { type: Number, default: 10 },
+    duration: { type: String, default: '90 min' },
+    priceSar: { type: Number, default: 45 },
+    officialRuleSummary: { type: String, default: '' },
+    uploadedByTeacherId: { type: String, default: null },
+    uploadedByTeacherName: { type: String, default: '' },
+    sourceFileName: { type: String, default: '' },
+    freePreview: { type: Schema.Types.Mixed, required: true },
+    fullQuestions: { type: [Schema.Types.Mixed], default: [] },
+  },
+  { timestamps: true }
+);
+
+const TrainerProfileSchema = new Schema(
+  {
+    trainerId: { type: String, enum: ['marwan', 'mohamed'], required: true, unique: true },
+    name: { type: String, required: true },
+    roleTitle: { type: String, required: true },
+    photoUrl: { type: String, default: '' },
+    languages: { type: [String], default: ['English'] },
+    curricula: { type: [String], default: [] },
+    hourlyRateSar: { type: Number, default: 180 },
+    packRateSar: { type: Number, default: 800 },
+    credentials: { type: String, default: '' },
+    bioFr: { type: String, default: '' },
+    bioEn: { type: String, default: '' },
+    bioAr: { type: String, default: '' },
+    experiences: { type: [String], default: [] },
+    skills: { type: [String], default: [] },
+    availabilitySlots: { type: [String], default: [] },
+  },
+  { timestamps: true }
+);
+
 const RosterStudentModel: Model<any> =
   mongoose.models.RosterStudent || mongoose.model('RosterStudent', RosterStudentSchema);
 const WeeklyMissionModel: Model<any> =
@@ -412,6 +463,10 @@ const WritingSubmissionModel: Model<any> =
   mongoose.models.WritingSubmission || mongoose.model('WritingSubmission', WritingSubmissionSchema);
 const DemoReportModel: Model<any> =
   mongoose.models.DemoReport || mongoose.model('DemoReport', DemoReportSchema);
+const PastPaperModel: Model<any> =
+  mongoose.models.PastPaper || mongoose.model('PastPaper', PastPaperSchema);
+const TrainerProfileModel: Model<any> =
+  mongoose.models.TrainerProfile || mongoose.model('TrainerProfile', TrainerProfileSchema);
 
 // Cached connection for Vercel serverless cold-starts
 let connectionPromise: Promise<boolean> | null = null;
@@ -461,6 +516,18 @@ const memoryOrders: OrderRecord[] = [];
 const memoryExams: GeneratedExamRecord[] = [];
 const memoryProgress = new Map<string, ProgressRecord>();
 const memoryPlacements: PlacementResultRecord[] = [];
+const memoryPastPapers: PastPaperItem[] = PAST_PAPERS_CATALOG.map((p) => ({
+  ...p,
+  fullQuestions: [...p.fullQuestions],
+}));
+const memoryTrainers: TrainerProfile[] = TRAINERS.map((t) => ({
+  ...t,
+  languages: [...t.languages],
+  curricula: [...t.curricula],
+  experiences: [...t.experiences],
+  skills: [...t.skills],
+  availabilitySlots: [...t.availabilitySlots],
+}));
 const memoryDemoReports: DemoReportRecord[] = [
   {
     id: 'demo-rep-1',
@@ -1530,5 +1597,161 @@ export const db = {
     }
 
     return found;
+  },
+
+  // --- Past Papers Catalog & Teacher Uploads ---
+  async getPastPapers(): Promise<PastPaperItem[]> {
+    if (await connectDatabase()) {
+      let docs = await PastPaperModel.find({}).sort({ createdAt: -1 }).lean();
+      if (docs.length === 0) {
+        await PastPaperModel.insertMany(
+          PAST_PAPERS_CATALOG.map((p) => ({ ...p, paperId: p.id }))
+        );
+        docs = await PastPaperModel.find({}).sort({ createdAt: -1 }).lean();
+      }
+      return docs.map((d: any) => ({
+        id: d.paperId || String(d._id),
+        code: d.code,
+        title: d.title,
+        curriculum: d.curriculum,
+        subject: d.subject,
+        year: d.year,
+        examDate: d.examDate || String(d.year),
+        session: d.session,
+        language: d.language,
+        pages: d.pages,
+        duration: d.duration,
+        priceSar: d.priceSar,
+        officialRuleSummary: d.officialRuleSummary,
+        uploadedByTeacherId: d.uploadedByTeacherId || undefined,
+        uploadedByTeacherName: d.uploadedByTeacherName || undefined,
+        sourceFileName: d.sourceFileName || undefined,
+        freePreview: d.freePreview,
+        fullQuestions: Array.isArray(d.fullQuestions) ? d.fullQuestions : [],
+      }));
+    }
+    return memoryPastPapers;
+  },
+
+  async findPastPaperById(id: string): Promise<PastPaperItem | null> {
+    if (await connectDatabase()) {
+      const doc: any = await PastPaperModel.findOne({ paperId: id }).lean();
+      if (doc) {
+        return {
+          id: doc.paperId,
+          code: doc.code,
+          title: doc.title,
+          curriculum: doc.curriculum,
+          subject: doc.subject,
+          year: doc.year,
+          examDate: doc.examDate || String(doc.year),
+          session: doc.session,
+          language: doc.language,
+          pages: doc.pages,
+          duration: doc.duration,
+          priceSar: doc.priceSar,
+          officialRuleSummary: doc.officialRuleSummary,
+          uploadedByTeacherId: doc.uploadedByTeacherId || undefined,
+          uploadedByTeacherName: doc.uploadedByTeacherName || undefined,
+          sourceFileName: doc.sourceFileName || undefined,
+          freePreview: doc.freePreview,
+          fullQuestions: Array.isArray(doc.fullQuestions) ? doc.fullQuestions : [],
+        };
+      }
+    }
+    return memoryPastPapers.find((p) => p.id === id) || null;
+  },
+
+  async createPastPaper(paper: PastPaperItem): Promise<PastPaperItem> {
+    if (await connectDatabase()) {
+      await PastPaperModel.create({ ...paper, paperId: paper.id });
+      return paper;
+    }
+    memoryPastPapers.unshift(paper);
+    return paper;
+  },
+
+  async deletePastPaper(id: string): Promise<boolean> {
+    if (await connectDatabase()) {
+      const res = await PastPaperModel.deleteOne({ paperId: id });
+      return (res.deletedCount || 0) > 0;
+    }
+    const idx = memoryPastPapers.findIndex((p) => p.id === id);
+    if (idx === -1) return false;
+    memoryPastPapers.splice(idx, 1);
+    return true;
+  },
+
+  // --- Editable Trainer Profiles (Admin Teachers) ---
+  async getTrainers(): Promise<TrainerProfile[]> {
+    if (await connectDatabase()) {
+      let docs = await TrainerProfileModel.find({}).lean();
+      if (docs.length === 0) {
+        await TrainerProfileModel.insertMany(
+          TRAINERS.map((t) => ({ ...t, trainerId: t.id }))
+        );
+        docs = await TrainerProfileModel.find({}).lean();
+      }
+      return docs.map((d: any) => ({
+        id: d.trainerId,
+        name: d.name,
+        roleTitle: d.roleTitle,
+        photoUrl: d.photoUrl || TRAINERS.find((t) => t.id === d.trainerId)?.photoUrl || '',
+        languages: d.languages || ['English'],
+        curricula: d.curricula || [],
+        hourlyRateSar: d.hourlyRateSar ?? 180,
+        packRateSar: d.packRateSar ?? 800,
+        credentials: d.credentials || '',
+        bioFr: d.bioFr || '',
+        bioEn: d.bioEn || '',
+        bioAr: d.bioAr || '',
+        experiences: Array.isArray(d.experiences) ? d.experiences : [],
+        skills: Array.isArray(d.skills) ? d.skills : [],
+        availabilitySlots: Array.isArray(d.availabilitySlots) ? d.availabilitySlots : [],
+      }));
+    }
+    return memoryTrainers;
+  },
+
+  async findTrainerById(id: 'marwan' | 'mohamed'): Promise<TrainerProfile | null> {
+    const list = await this.getTrainers();
+    return list.find((t) => t.id === id) || null;
+  },
+
+  async updateTrainerProfile(
+    id: 'marwan' | 'mohamed',
+    updates: Partial<Omit<TrainerProfile, 'id'>>
+  ): Promise<TrainerProfile | null> {
+    if (await connectDatabase()) {
+      await this.getTrainers();
+      const doc: any = await TrainerProfileModel.findOneAndUpdate(
+        { trainerId: id },
+        { $set: updates },
+        { new: true }
+      ).lean();
+      if (!doc) return null;
+      return {
+        id: doc.trainerId,
+        name: doc.name,
+        roleTitle: doc.roleTitle,
+        photoUrl: doc.photoUrl || TRAINERS.find((t) => t.id === doc.trainerId)?.photoUrl || '',
+        languages: doc.languages || ['English'],
+        curricula: doc.curricula || [],
+        hourlyRateSar: doc.hourlyRateSar ?? 180,
+        packRateSar: doc.packRateSar ?? 800,
+        credentials: doc.credentials || '',
+        bioFr: doc.bioFr || '',
+        bioEn: doc.bioEn || '',
+        bioAr: doc.bioAr || '',
+        experiences: Array.isArray(doc.experiences) ? doc.experiences : [],
+        skills: Array.isArray(doc.skills) ? doc.skills : [],
+        availabilitySlots: Array.isArray(doc.availabilitySlots) ? doc.availabilitySlots : [],
+      };
+    }
+
+    const idx = memoryTrainers.findIndex((t) => t.id === id);
+    if (idx === -1) return null;
+    memoryTrainers[idx] = { ...memoryTrainers[idx], ...updates, id };
+    return memoryTrainers[idx];
   },
 };

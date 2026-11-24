@@ -37,7 +37,9 @@ export type TeacherSubTab =
   | 'phonics'
   | 'skill-builder'
   | 'writing-review'
-  | 'weekly-reports';
+  | 'weekly-reports'
+  | 'past-papers-admin'
+  | 'profile-admin';
 
 export type CurriculumKey =
   | 'all'
@@ -248,12 +250,15 @@ export interface PastPaperSummary {
   curriculum: string;
   subject: string;
   year: number;
+  examDate?: string;
   session: string;
   language: 'English' | 'Français' | 'العربية';
   pages: number;
   duration: string;
   priceSar: number;
   officialRuleSummary: string;
+  uploadedByTeacherId?: 'marwan' | 'mohamed';
+  uploadedByTeacherName?: string;
   freePreview: {
     number: number;
     marks: number;
@@ -279,6 +284,7 @@ export interface TrainerProfile {
   id: 'marwan' | 'mohamed';
   name: string;
   roleTitle: string;
+  photoUrl: string;
   languages: ('English' | 'Français' | 'العربية')[];
   curricula: string[];
   hourlyRateSar: number;
@@ -287,6 +293,8 @@ export interface TrainerProfile {
   bioFr: string;
   bioEn: string;
   bioAr: string;
+  experiences: string[];
+  skills: string[];
   availabilitySlots: string[];
 }
 

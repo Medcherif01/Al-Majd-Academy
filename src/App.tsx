@@ -173,10 +173,17 @@ export default function App() {
     }
   }, []);
 
+  const fetchTrainers = useCallback(async () => {
+    try {
+      const res = await apiRequest<{ trainers: TrainerProfile[] }>('/api/trainers');
+      setTrainers(res.trainers);
+    } catch (err) {
+      console.error('Failed to load trainers:', err);
+    }
+  }, []);
+
   useEffect(() => {
-    apiRequest<{ trainers: TrainerProfile[] }>('/api/trainers')
-      .then((res) => setTrainers(res.trainers))
-      .catch((err) => console.error('Failed to load trainers:', err));
+    fetchTrainers();
 
     apiRequest<{ grades: GradeOption[]; paidCourses: PaidCourseItem[] }>('/api/placement/options')
       .then((res) => {
@@ -186,7 +193,7 @@ export default function App() {
       .catch((err) => console.error('Failed to load placement options:', err));
 
     fetchPastPapers(null);
-  }, [fetchPastPapers]);
+  }, [fetchPastPapers, fetchTrainers]);
 
   const handleAuthSuccess = async (newToken: string, loggedInUser: UserProfile) => {
     setToken(newToken);
@@ -397,7 +404,14 @@ export default function App() {
 
         <main className="flex-1">
           {workspaceMode === 'teacher' ? (
-            <TeacherPortal lang={lang} onLaunchAiExam={launchAiExam} />
+            <TeacherPortal
+              lang={lang}
+              trainers={trainers}
+              papers={papers}
+              onLaunchAiExam={launchAiExam}
+              onTrainersUpdated={fetchTrainers}
+              onPapersUpdated={() => fetchPastPapers(token)}
+            />
           ) : (
             <AnimatePresence mode="wait">
               {activeView === 'placement' && (
@@ -603,55 +617,97 @@ export default function App() {
                     }}
                   />
 
-                  {/* Bottom Academic Leadership Banner */}
+                  {/* Bottom Academic Leadership Showcase (Live Teacher Profiles, Photos & Skills) */}
                   <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-16">
-                    <div className="bg-[#0F2537] text-white rounded-2xl p-8 sm:p-10 grid grid-cols-1 lg:grid-cols-3 gap-8 items-center shadow-sm">
-                      <div className="lg:col-span-2">
-                        <div className="text-xs font-semibold text-sky-300 mb-2">
-                          {lang === 'ar'
-                            ? 'إشراف تربوي ثنائي المسار · بوابة المعلم والطالب'
-                            : lang === 'en'
-                              ? 'Bilingual Academic Leadership · Student & Teacher Portals'
-                              : 'Direction Pédagogique Trilingue · Suivi Formateur & Élève'}
+                    <div className="bg-[#0F2537] text-white rounded-2xl p-8 sm:p-10 space-y-6 shadow-sm">
+                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                        <div>
+                          <div className="text-xs font-semibold text-sky-300 mb-2">
+                            {lang === 'ar'
+                              ? 'إشراف تربوي ثنائي المسار · بوابة المعلم والطالب'
+                              : lang === 'en'
+                                ? 'Bilingual Academic Leadership · Student & Teacher Portals'
+                                : 'Direction Pédagogique Trilingue · Suivi Formateur & Élève'}
+                          </div>
+                          <h2 className="font-display text-2xl sm:text-3xl font-bold text-balance">
+                            {lang === 'ar'
+                              ? 'مروان المحمدي (المسار الإنجليزي) ومحمد شريف (الفرنسي والعربي، نافس والقدرات)'
+                              : lang === 'en'
+                                ? 'Marwan Mhamdi (English Tracks) & Mohamed Cherif (French, Arabic, NAFES & Qudurat)'
+                                : 'Marwan Mhamdi (cursus anglais) & Mohamed Cherif (français, arabe, NAFES & Qudurat)'}
+                          </h2>
                         </div>
-                        <h2 className="font-display text-2xl sm:text-3xl font-bold mb-3 text-balance">
-                          {lang === 'ar'
-                            ? 'مروان المحمدي (المسار الإنجليزي) ومحمد شريف (الفرنسي والعربي، نافس والقدرات)'
-                            : lang === 'en'
-                              ? 'Marwan Mhamdi (English Tracks) & Mohamed Cherif (French, Arabic, NAFES & Qudurat)'
-                              : 'Marwan Mhamdi (cursus anglais) & Mohamed Cherif (français, arabe, NAFES & Qudurat)'}
-                        </h2>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-slate-200 mt-4">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="w-4 h-4 text-sky-400 shrink-0" />
-                            <span>Marwan Mhamdi — All English Curricula</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="w-4 h-4 text-sky-400 shrink-0" />
-                            <span>Mohamed Cherif — Français &amp; العربية</span>
-                          </div>
+
+                        <div className="flex flex-wrap gap-3 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setWorkspaceMode('teacher')}
+                            className="px-5 py-3 bg-[#0B6E8C] hover:bg-[#0E83A6] text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+                          >
+                            {t.modeTeacher}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveView('tutors');
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }}
+                            className="px-5 py-3 bg-white text-[#0F2537] hover:bg-slate-100 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+                          >
+                            {t.bookTrainerBtn}
+                          </button>
                         </div>
                       </div>
 
-                      <div className="flex flex-col sm:flex-row lg:flex-col gap-3">
-                        <button
-                          type="button"
-                          onClick={() => setWorkspaceMode('teacher')}
-                          className="px-5 py-3 bg-[#0B6E8C] hover:bg-[#0E83A6] text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer"
-                        >
-                          {t.modeTeacher}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveView('tutors');
-                            window.scrollTo({ top: 0, behavior: 'smooth' });
-                          }}
-                          className="px-5 py-3 bg-white text-[#0F2537] hover:bg-slate-100 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
-                        >
-                          {t.bookTrainerBtn}
-                        </button>
-                      </div>
+                      {trainers.length > 0 && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                          {trainers.map((tr) => (
+                            <div
+                              key={tr.id}
+                              className="p-5 rounded-xl bg-white/10 border border-white/15 flex items-start gap-4"
+                            >
+                              <div className="w-16 h-16 rounded-xl overflow-hidden border border-white/20 shrink-0 bg-slate-800">
+                                <img
+                                  src={
+                                    tr.photoUrl ||
+                                    (tr.id === 'marwan'
+                                      ? '/src/assets/images/trainer_marwan_mhamdi_1795527476961.jpg'
+                                      : '/src/assets/images/trainer_mohamed_cherif_1795527477326.jpg')
+                                  }
+                                  alt={tr.name}
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                              <div className="min-w-0 space-y-2">
+                                <div>
+                                  <div className="font-display text-base font-bold text-white">
+                                    {tr.name}
+                                  </div>
+                                  <div className="text-xs text-sky-200">{tr.roleTitle}</div>
+                                </div>
+                                {tr.experiences?.[0] && (
+                                  <div className="text-xs text-slate-200 flex items-center gap-1.5">
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-sky-300 shrink-0" />
+                                    <span className="truncate">{tr.experiences[0]}</span>
+                                  </div>
+                                )}
+                                {tr.skills && tr.skills.length > 0 && (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {tr.skills.slice(0, 3).map((sk) => (
+                                      <span
+                                        key={sk}
+                                        className="px-2 py-0.5 rounded bg-white/15 text-[10px] font-semibold text-white"
+                                      >
+                                        {sk}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </section>
                 </motion.div>

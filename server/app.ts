@@ -17,8 +17,6 @@ import {
 } from './auth.ts';
 import {
   ALL_ACCESS_PASS_PRICE_SAR,
-  PAST_PAPERS_CATALOG,
-  TRAINERS,
   type PastPaperItem,
 } from './catalog.ts';
 import {
@@ -30,6 +28,7 @@ import {
 } from './placement.ts';
 import {
   evaluateWritingWithGemini,
+  extractExactPastPaperWithGemini,
   GeminiUnavailableError,
   generateInternationalExam,
 } from './gemini.ts';
@@ -54,6 +53,7 @@ function escapeHtml(str: string): string {
 function buildPrintablePaperHtml(paper: PastPaperItem, buyerName: string, buyerEmail: string): string {
   const isRtl = paper.language === 'العربية';
   const dirAttr = isRtl ? 'rtl' : 'ltr';
+  const dateDisplay = paper.examDate ? `${paper.examDate} (${paper.year})` : String(paper.year);
   const questionsHtml = paper.fullQuestions
     .map(
       (q) => `
@@ -62,10 +62,10 @@ function buildPrintablePaperHtml(paper: PastPaperItem, buyerName: string, buyerE
           <span class="q-num">Question ${q.number}</span>
           <span class="q-marks">${q.marks} ${q.marks > 1 ? 'marks' : 'mark'}</span>
         </div>
-        <p class="q-prompt">${escapeHtml(q.prompt)}</p>
+        <p class="q-prompt" style="white-space: pre-wrap;">${escapeHtml(q.prompt)}</p>
         <div class="mark-scheme">
           <div class="ms-title">Official Mark Scheme / Correction Officielle</div>
-          <p>${escapeHtml(q.markScheme)}</p>
+          <p style="white-space: pre-wrap;">${escapeHtml(q.markScheme)}</p>
           <p class="examiner-note"><strong>Examiner Note:</strong> ${escapeHtml(q.examinerNote)}</p>
         </div>
       </section>
@@ -79,15 +79,17 @@ function buildPrintablePaperHtml(paper: PastPaperItem, buyerName: string, buyerE
   <meta charset="UTF-8" />
   <title>${escapeHtml(paper.code)} — ${escapeHtml(paper.title)}</title>
   <style>
-    body { font-family: Georgia, 'Times New Roman', serif; max-width: 820px; margin: 40px auto; padding: 0 24px; color: #0f172a; line-height: 1.6; }
-    header { border-bottom: 2px solid #0f172a; padding-bottom: 16px; margin-bottom: 24px; }
-    .brand { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: #047857; font-weight: bold; }
-    h1 { font-size: 24px; margin: 8px 0; }
-    .meta { font-size: 14px; color: #475569; }
+    body { font-family: Georgia, 'Times New Roman', serif; max-width: 840px; margin: 40px auto; padding: 0 24px; color: #0f172a; line-height: 1.65; }
+    header { border-bottom: 2px solid #0f2537; padding-bottom: 16px; margin-bottom: 24px; }
+    .brand { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #0b6e8c; font-weight: bold; font-family: sans-serif; }
+    h1 { font-size: 24px; margin: 8px 0; color: #0f2537; }
+    .meta { font-size: 14px; color: #475569; font-family: sans-serif; }
+    .meta-grid { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: 13px; color: #0f2537; font-family: sans-serif; }
+    .meta-tag { background: #eef5f9; border: 1px solid #bfd8e6; padding: 4px 10px; border-radius: 6px; }
     .rules { background: #f8fafc; border: 1px solid #cbd5e1; padding: 14px 18px; margin-bottom: 28px; font-size: 14px; }
     .question-block { border-bottom: 1px solid #e2e8f0; padding: 20px 0; page-break-inside: avoid; }
     .q-header { display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 8px; font-family: sans-serif; }
-    .q-marks { color: #047857; }
+    .q-marks { color: #0b6e8c; }
     .q-prompt { font-size: 16px; margin-bottom: 14px; }
     .mark-scheme { background: #f0fdf4; border: 1px solid #bbf7d0; padding: 14px 16px; font-size: 14px; }
     .ms-title { font-weight: bold; color: #065f46; margin-bottom: 6px; font-family: sans-serif; }
@@ -98,9 +100,15 @@ function buildPrintablePaperHtml(paper: PastPaperItem, buyerName: string, buyerE
 </head>
 <body>
   <header>
-    <div class="brand">Al-Majd International Academy · Official Exam Pack &amp; Mark Scheme</div>
+    <div class="brand">Al-Majd International Academy · Official Exam Pack &amp; Mark Scheme (HTML)</div>
     <h1>${escapeHtml(paper.title)}</h1>
-    <div class="meta">${escapeHtml(paper.code)} · ${escapeHtml(paper.curriculum)} · ${escapeHtml(paper.session)} (${paper.year}) · ${escapeHtml(paper.duration)}</div>
+    <div class="meta">${escapeHtml(paper.code)} · ${escapeHtml(paper.curriculum)} · ${escapeHtml(paper.session)} · ${escapeHtml(paper.duration)}</div>
+    <div class="meta-grid">
+      <span class="meta-tag"><strong>Matière :</strong> ${escapeHtml(paper.subject)}</span>
+      <span class="meta-tag"><strong>Date / Année :</strong> ${escapeHtml(dateDisplay)}</span>
+      <span class="meta-tag"><strong>Catégorie :</strong> ${escapeHtml(paper.curriculum)}</span>
+      ${paper.uploadedByTeacherName ? `<span class="meta-tag"><strong>Publié par :</strong> ${escapeHtml(paper.uploadedByTeacherName)}</span>` : ''}
+    </div>
   </header>
   <div class="rules">
     <strong>Official Examination Rules:</strong> ${escapeHtml(paper.officialRuleSummary)}
@@ -115,7 +123,7 @@ function buildPrintablePaperHtml(paper: PastPaperItem, buyerName: string, buyerE
 
 export function createApiApp() {
   const app = express();
-  app.use(express.json({ limit: '1mb' }));
+  app.use(express.json({ limit: '15mb' }));
 
   // Ensure DB initialization attempt on API requests (cached in Vercel)
   app.use(async (_req, _res, next) => {
@@ -272,15 +280,17 @@ export function createApiApp() {
     });
   });
 
-  // --- Trainers ---
-  app.get('/api/trainers', (_req, res) => {
-    res.json({ trainers: TRAINERS });
+  // --- Trainers (DB-backed & Editable by Teachers) ---
+  app.get('/api/trainers', async (_req, res) => {
+    const trainers = await db.getTrainers();
+    res.json({ trainers });
   });
 
-  // --- Past Papers Catalog & Paid Access ---
-  app.get('/api/past-papers', optionalAuth, (req: AuthenticatedRequest, res) => {
+  // --- Past Papers Catalog & Paid Access (DB-backed + Teacher Imports) ---
+  app.get('/api/past-papers', optionalAuth, async (req: AuthenticatedRequest, res) => {
     const user = req.user;
-    const papers = PAST_PAPERS_CATALOG.map((paper) => {
+    const allPapers = await db.getPastPapers();
+    const papers = allPapers.map((paper) => {
       const isUnlocked = Boolean(
         user && (user.hasAllAccessPass || user.unlockedPapers.includes(paper.id))
       );
@@ -291,12 +301,15 @@ export function createApiApp() {
         curriculum: paper.curriculum,
         subject: paper.subject,
         year: paper.year,
+        examDate: paper.examDate || String(paper.year),
         session: paper.session,
         language: paper.language,
         pages: paper.pages,
         duration: paper.duration,
         priceSar: paper.priceSar,
         officialRuleSummary: paper.officialRuleSummary,
+        uploadedByTeacherId: paper.uploadedByTeacherId,
+        uploadedByTeacherName: paper.uploadedByTeacherName,
         freePreview: paper.freePreview,
         questionCount: paper.fullQuestions.length,
         isUnlocked,
@@ -335,7 +348,7 @@ export function createApiApp() {
         }
         const uniqueIds = Array.from(new Set(paperIds.filter((id) => typeof id === 'string')));
         for (const id of uniqueIds) {
-          const catalogItem = PAST_PAPERS_CATALOG.find((p) => p.id === id);
+          const catalogItem = await db.findPastPaperById(id);
           if (!catalogItem) {
             res.status(404).json({ error: `Sujet introuvable : ${id}` });
             return;
@@ -382,9 +395,9 @@ export function createApiApp() {
     }
   });
 
-  app.get('/api/past-papers/:id/view', requireAuth, (req: AuthenticatedRequest, res) => {
+  app.get('/api/past-papers/:id/view', requireAuth, async (req: AuthenticatedRequest, res) => {
     const user = req.user!;
-    const paper = PAST_PAPERS_CATALOG.find((p) => p.id === req.params.id);
+    const paper = await db.findPastPaperById(req.params.id);
     if (!paper) {
       res.status(404).json({ error: 'Sujet introuvable.' });
       return;
@@ -399,9 +412,9 @@ export function createApiApp() {
     res.json({ paper });
   });
 
-  app.get('/api/past-papers/:id/download', requireAuth, (req: AuthenticatedRequest, res) => {
+  app.get('/api/past-papers/:id/download', requireAuth, async (req: AuthenticatedRequest, res) => {
     const user = req.user!;
-    const paper = PAST_PAPERS_CATALOG.find((p) => p.id === req.params.id);
+    const paper = await db.findPastPaperById(req.params.id);
     if (!paper) {
       res.status(404).json({ error: 'Sujet introuvable.' });
       return;
@@ -528,15 +541,24 @@ export function createApiApp() {
       if (calRes.ok) {
         const calData: any = await calRes.json();
         calendarEventLink = String(calData?.htmlLink || '');
-        if (!meetLink && calData?.hangoutLink) {
-          meetLink = String(calData.hangoutLink);
+        const videoEntry = Array.isArray(calData?.conferenceData?.entryPoints)
+          ? calData.conferenceData.entryPoints.find((ep: any) => ep?.entryPointType === 'video')?.uri
+          : '';
+        if (!meetLink && (calData?.hangoutLink || videoEntry)) {
+          meetLink = String(calData.hangoutLink || videoEntry);
+          warning = '';
+        }
+      } else if (!meetLink) {
+        const calErrText = await calRes.text().catch(() => '');
+        if (!warning) {
+          warning = `Google Calendar API (${calRes.status}): ${calErrText.slice(0, 140)}`;
         }
       }
     } catch {
       // Calendar event creation is secondary if Meet space already succeeded
     }
 
-    return { meetLink, calendarEventLink, warning: warning || undefined };
+    return { meetLink, calendarEventLink, warning: meetLink ? undefined : warning || undefined };
   }
 
   app.get('/api/bookings', requireAuth, async (req: AuthenticatedRequest, res) => {
@@ -563,8 +585,9 @@ export function createApiApp() {
         googleAccessToken,
       } = req.body ?? {};
 
-      const trainer = TRAINERS.find((t) => t.id === trainerId);
-      if (!trainer) {
+      const validTid: 'marwan' | 'mohamed' = trainerId === 'mohamed' ? 'mohamed' : 'marwan';
+      const trainer = await db.findTrainerById(validTid);
+      if (!trainer || trainerId !== trainer.id) {
         res.status(400).json({ error: 'Formateur sélectionné invalide.' });
         return;
       }
@@ -753,6 +776,29 @@ export function createApiApp() {
       res.json({ booking: updated });
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Erreur lors de la génération Google Meet.' });
+    }
+  });
+
+  app.patch('/api/bookings/:id/meet-link', requireAuth, async (req: AuthenticatedRequest, res) => {
+    try {
+      const booking = await db.findBookingById(req.params.id);
+      if (!booking || booking.userId !== req.user!.id) {
+        res.status(404).json({ error: 'Réservation introuvable.' });
+        return;
+      }
+      if (!booking.paid) {
+        res.status(402).json({ error: 'Le paiement est requis avant d’associer un lien Google Meet.' });
+        return;
+      }
+      const rawUrl = typeof req.body?.meetLink === 'string' ? req.body.meetLink.trim() : '';
+      if (!/^https:\/\/meet\.google\.com\/[a-z0-9-]+$/i.test(rawUrl)) {
+        res.status(400).json({ error: 'Lien Google Meet invalide (format attendu : https://meet.google.com/xxx-xxxx-xxx).' });
+        return;
+      }
+      const updated = await db.updateBookingMeetLinks(booking.id, rawUrl, booking.calendarEventLink || '');
+      res.json({ booking: updated });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de l’enregistrement du lien Meet.' });
     }
   });
 
@@ -1298,6 +1344,217 @@ export function createApiApp() {
         return;
       }
       res.status(500).json({ error: msg || 'Erreur Gemini' });
+    }
+  });
+
+  // --- Teacher Admin: Import Past Paper (PDF or Word -> Gemini Verbatim Extraction -> HTML Catalog) ---
+  app.post('/api/teacher/past-papers/import', async (req, res) => {
+    try {
+      const {
+        teacherId,
+        curriculum,
+        subject,
+        year,
+        examDate,
+        session,
+        language,
+        priceSar,
+        duration,
+        titleOverride,
+        fileName,
+        mimeType,
+        fileBase64,
+      } = req.body ?? {};
+
+      const validTeacher: 'marwan' | 'mohamed' = teacherId === 'mohamed' ? 'mohamed' : 'marwan';
+      const allowedCurricula: PastPaperItem['curriculum'][] = [
+        'American (SAT/AP)',
+        'IB Diploma',
+        'IGCSE & A-Level',
+        'NAFES (ETEC)',
+        'Qudurat & Tahsili',
+        'Bac Français',
+      ];
+      if (!allowedCurricula.includes(curriculum)) {
+        res.status(400).json({ error: 'Catégorie d’examen invalide.' });
+        return;
+      }
+      if (!isNonEmptyString(subject, 120)) {
+        res.status(400).json({ error: 'La matière de l’examen est requise.' });
+        return;
+      }
+      if (!isNonEmptyString(fileName, 200) || typeof fileBase64 !== 'string' || fileBase64.length < 20) {
+        res.status(400).json({ error: 'Veuillez importer un fichier PDF ou Word (.docx).' });
+        return;
+      }
+      if (fileBase64.length > 14 * 1024 * 1024) {
+        res.status(400).json({ error: 'Fichier trop volumineux (limite 10 Mo).' });
+        return;
+      }
+
+      const validLang: 'English' | 'Français' | 'العربية' =
+        language === 'English' || language === 'العربية' ? language : 'Français';
+      const parsedYear = Math.min(2035, Math.max(1990, Number(year) || new Date().getFullYear()));
+      const cleanExamDate = isNonEmptyString(examDate, 60) ? examDate.trim() : String(parsedYear);
+      const cleanSession = isNonEmptyString(session, 100) ? session.trim() : cleanExamDate;
+      const cleanPrice = Math.min(500, Math.max(10, Number(priceSar) || 45));
+
+      const extracted = await extractExactPastPaperWithGemini({
+        fileBase64,
+        mimeType: typeof mimeType === 'string' ? mimeType : '',
+        fileName: fileName.trim(),
+        curriculum,
+        subject: subject.trim(),
+        year: parsedYear,
+        examDate: cleanExamDate,
+        session: cleanSession,
+        language: validLang,
+        priceSar: cleanPrice,
+        duration: typeof duration === 'string' ? duration.trim() : undefined,
+        titleOverride: typeof titleOverride === 'string' ? titleOverride.trim() : undefined,
+      });
+
+      const trainer = await db.findTrainerById(validTeacher);
+      const paperId = `tp-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
+      const newPaper: PastPaperItem = {
+        id: paperId,
+        code: extracted.code,
+        title: extracted.title,
+        curriculum,
+        subject: subject.trim(),
+        year: parsedYear,
+        examDate: cleanExamDate,
+        session: cleanSession,
+        language: validLang,
+        pages: extracted.pages,
+        duration: extracted.duration,
+        priceSar: cleanPrice,
+        officialRuleSummary: extracted.officialRuleSummary,
+        uploadedByTeacherId: validTeacher,
+        uploadedByTeacherName: trainer?.name || (validTeacher === 'marwan' ? 'Marwan Mhamdi' : 'Mohamed Cherif'),
+        sourceFileName: fileName.trim(),
+        freePreview: extracted.fullQuestions[0],
+        fullQuestions: extracted.fullQuestions,
+      };
+
+      const saved = await db.createPastPaper(newPaper);
+      const previewHtml = buildPrintablePaperHtml(
+        saved,
+        saved.uploadedByTeacherName || 'Admin Teacher',
+        'admin@almajd-academy.sa'
+      );
+
+      res.status(201).json({ paper: saved, previewHtml });
+    } catch (err: any) {
+      const msg = err?.message || '';
+      if (msg === 'GEMINI_API_KEY_MISSING') {
+        res.status(503).json({ error: 'Clé Gemini API non configurée sur le serveur.' });
+        return;
+      }
+      if (err instanceof GeminiUnavailableError || msg.includes('503') || msg.includes('UNAVAILABLE')) {
+        res.status(503).json({
+          error: 'Les serveurs Gemini connaissent un pic temporaire de demande (503). Réessayez dans quelques secondes.',
+        });
+        return;
+      }
+      res.status(500).json({ error: msg || 'Erreur lors du traitement du Past Paper avec Gemini.' });
+    }
+  });
+
+  app.delete('/api/teacher/past-papers/:id', async (req, res) => {
+    try {
+      const deleted = await db.deletePastPaper(req.params.id);
+      if (!deleted) {
+        res.status(404).json({ error: 'Past Paper introuvable.' });
+        return;
+      }
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de la suppression.' });
+    }
+  });
+
+  // --- Teacher Admin: Update Profile, Photo, Experiences & Skills ---
+  app.put('/api/teacher/profile/:trainerId', async (req, res) => {
+    try {
+      const tid = req.params.trainerId === 'mohamed' ? 'mohamed' : req.params.trainerId === 'marwan' ? 'marwan' : null;
+      if (!tid) {
+        res.status(400).json({ error: 'Formateur invalide.' });
+        return;
+      }
+
+      const {
+        name,
+        roleTitle,
+        photoUrl,
+        credentials,
+        bioFr,
+        bioEn,
+        bioAr,
+        hourlyRateSar,
+        packRateSar,
+        curricula,
+        experiences,
+        skills,
+        availabilitySlots,
+      } = req.body ?? {};
+
+      const updates: Record<string, any> = {};
+      if (isNonEmptyString(name, 100)) updates.name = name.trim();
+      if (isNonEmptyString(roleTitle, 160)) updates.roleTitle = roleTitle.trim();
+      if (typeof credentials === 'string') updates.credentials = credentials.trim().slice(0, 300);
+      if (typeof bioFr === 'string') updates.bioFr = bioFr.trim().slice(0, 1200);
+      if (typeof bioEn === 'string') updates.bioEn = bioEn.trim().slice(0, 1200);
+      if (typeof bioAr === 'string') updates.bioAr = bioAr.trim().slice(0, 1200);
+      if (typeof hourlyRateSar === 'number' && hourlyRateSar >= 50 && hourlyRateSar <= 2000) {
+        updates.hourlyRateSar = Math.round(hourlyRateSar);
+      }
+      if (typeof packRateSar === 'number' && packRateSar >= 100 && packRateSar <= 10000) {
+        updates.packRateSar = Math.round(packRateSar);
+      }
+
+      if (typeof photoUrl === 'string' && photoUrl.trim()) {
+        const cleanPhoto = photoUrl.trim();
+        const isSafeImage =
+          cleanPhoto.startsWith('/src/assets/') ||
+          cleanPhoto.startsWith('/assets/') ||
+          /^https:\/\/.+/.test(cleanPhoto) ||
+          /^data:image\/(png|jpeg|jpg|webp);base64,[A-Za-z0-9+/=]+$/.test(cleanPhoto);
+        if (!isSafeImage || cleanPhoto.length > 900_000) {
+          res.status(400).json({ error: 'Format de photo non valide (PNG, JPEG ou WebP < 650 Ko).' });
+          return;
+        }
+        updates.photoUrl = cleanPhoto;
+      }
+
+      const sanitizeStringList = (arr: unknown, maxItems = 15, maxLen = 240) =>
+        Array.isArray(arr)
+          ? arr
+              .filter((x) => isNonEmptyString(x, maxLen))
+              .map((x) => x.trim())
+              .slice(0, maxItems)
+          : undefined;
+
+      const cleanExp = sanitizeStringList(experiences, 12, 260);
+      if (cleanExp) updates.experiences = cleanExp;
+
+      const cleanSkills = sanitizeStringList(skills, 16, 120);
+      if (cleanSkills) updates.skills = cleanSkills;
+
+      const cleanCurricula = sanitizeStringList(curricula, 12, 120);
+      if (cleanCurricula) updates.curricula = cleanCurricula;
+
+      const cleanSlots = sanitizeStringList(availabilitySlots, 12, 60);
+      if (cleanSlots) updates.availabilitySlots = cleanSlots;
+
+      const updated = await db.updateTrainerProfile(tid, updates);
+      if (!updated) {
+        res.status(404).json({ error: 'Profil formateur introuvable.' });
+        return;
+      }
+      res.json({ trainer: updated });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de la mise à jour du profil.' });
     }
   });
 
