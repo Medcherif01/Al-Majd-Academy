@@ -4,10 +4,10 @@ import {
   Briefcase,
   Calendar,
   CheckCircle2,
-  CreditCard,
   ExternalLink,
   Globe2,
   Link2,
+  MessageCircle,
   Plus,
   Video,
 } from 'lucide-react';
@@ -19,6 +19,7 @@ import {
   initGoogleWorkspaceAuth,
   signInWithGoogleForMeet,
 } from '../utils/googleMeetAuth';
+import { TEACHER_WHATSAPP, buildWhatsAppActivationUrl } from '../utils/whatsapp';
 import type {
   BookingItem,
   PlacementResult,
@@ -105,7 +106,6 @@ export function TutoringSection({
   const [dateSlot, setDateSlot] = useState<string>(getDefaultDateIso);
   const [timeValue, setTimeValue] = useState<string>('17:00');
   const [studentName, setStudentName] = useState<string>(user?.name || '');
-  const [paymentMethod, setPaymentMethod] = useState<string>('Mada');
   const [notes, setNotes] = useState<string>('');
 
   // Weaknesses & Themes attached to teacher report
@@ -328,9 +328,7 @@ export function TutoringSection({
           studentName: studentName || user.name,
           attachedWeaknesses,
           themesToCover,
-          paymentMethod,
           notes,
-          googleAccessToken: activeGoogleToken || undefined,
         },
       });
       setConfirmedBooking(res.booking);
@@ -535,6 +533,9 @@ export function TutoringSection({
                   <span className="font-mono font-semibold text-[#0F2537]">
                     {trainer.packRateSar} SAR
                   </span>
+                  <div className="font-mono text-[11px] font-semibold text-emerald-800 mt-1" dir="ltr">
+                    WhatsApp : {TEACHER_WHATSAPP[trainer.id].phoneDisplay}
+                  </div>
                 </div>
 
                 <button
@@ -560,23 +561,23 @@ export function TutoringSection({
         })}
       </div>
 
-      {/* Live Session Booking + Google Meet Form */}
+      {/* Live Session Booking + WhatsApp Teacher Activation Form */}
       <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-xs space-y-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-200">
           <div>
             <h3 className="font-display text-2xl font-bold text-[#0F2537]">
               {lang === 'ar'
-                ? `حجز حصة خاصة عبر Google Meet مع ${activeTrainer.name}`
+                ? `حجز حصة خاصة وتفعيلها عبر واتساب مع ${activeTrainer.name}`
                 : lang === 'en'
-                  ? `Schedule Paid Google Meet Coaching with ${activeTrainer.name}`
-                  : `Réserver une formation privée Google Meet avec ${activeTrainer.name}`}
+                  ? `Request Private Coaching & Activate via WhatsApp with ${activeTrainer.name}`
+                  : `Demander une séance privée et activer sur WhatsApp avec ${activeTrainer.name}`}
             </h3>
             <p className="text-xs text-slate-600 mt-1">
               {lang === 'ar'
-                ? 'اختر التاريخ والوقت والمدة، وأرفق نقاط الضعف والدروس المطلوبة؛ يُرسل التقرير للمدرب ويُنشأ رابط Google Meet فور الدفع.'
+                ? `اختر التاريخ والوقت والمدة وأرفق نقاط الضعف، ثم تواصل عبر واتساب (${TEACHER_WHATSAPP[activeTrainer.id].phoneE164}) لتأكيد وتفعيل الحصة.`
                 : lang === 'en'
-                  ? 'Pick any convenient date, time & duration, attach weaknesses and target lessons; a detailed report is sent to the teacher with Google Meet generated after payment.'
-                  : 'Choisissez librement la date et l’horaire qui vous conviennent, la durée, vos points faibles et les leçons à travailler : le rapport est transmis au formateur et le lien Google Meet est généré après paiement.'}
+                  ? `Pick your date, time & duration, attach weaknesses and target lessons, then confirm directly with your teacher on WhatsApp (${TEACHER_WHATSAPP[activeTrainer.id].phoneDisplay}).`
+                  : `Choisissez la date, l’horaire, la durée, vos points faibles et thèmes, puis finalisez l’activation directement sur WhatsApp (${TEACHER_WHATSAPP[activeTrainer.id].phoneDisplay}).`}
             </p>
           </div>
           <div className="font-mono text-2xl font-bold text-[#0B6E8C] tabular-nums shrink-0">
@@ -584,111 +585,146 @@ export function TutoringSection({
           </div>
         </div>
 
-        {/* Confirmed Booking + Post-Payment Google Meet Result */}
-        {confirmedBooking && (
-          <div className="p-5 sm:p-6 rounded-2xl bg-emerald-50 border border-emerald-200 space-y-4">
-            <div className="flex items-start gap-3">
-              <CheckCircle2 className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
-              <div className="space-y-1 text-sm text-emerald-950">
-                <div className="font-semibold">
-                  Paiement confirmé ({confirmedBooking.paymentReference}) · Rapport transmis à {confirmedBooking.trainerName}
-                </div>
-                <div className="text-xs text-emerald-900 tabular-nums">
-                  {confirmedBooking.curriculum} ({confirmedBooking.subject}) · {confirmedBooking.dateSlot} ·{' '}
-                  {confirmedBooking.timeSlot} · {confirmedBooking.durationLabel} ·{' '}
-                  <strong className="font-mono">{confirmedBooking.priceSar} SAR</strong>
-                </div>
-                {confirmedBooking.attachedWeaknesses.length > 0 && (
-                  <div className="text-xs text-emerald-900 pt-1">
-                    <strong>Points faibles envoyés :</strong> {confirmedBooking.attachedWeaknesses.join(' · ')}
-                  </div>
-                )}
-                {confirmedBooking.themesToCover.length > 0 && (
-                  <div className="text-xs text-emerald-900">
-                    <strong>Thèmes &amp; leçons :</strong> {confirmedBooking.themesToCover.join(' · ')}
-                  </div>
-                )}
-              </div>
-            </div>
+        {/* Saved Booking Request + Direct WhatsApp Confirmation / Post-Activation Meet */}
+        {confirmedBooking && (() => {
+          const trainerWaInfo = TEACHER_WHATSAPP[confirmedBooking.trainerId];
+          const bookingWaUrl = buildWhatsAppActivationUrl({
+            teacherId: confirmedBooking.trainerId,
+            teacherDisplayName: confirmedBooking.trainerName,
+            itemType: 'tutoring',
+            itemTitle: `${confirmedBooking.curriculum} · ${confirmedBooking.subject} (${confirmedBooking.durationLabel})`,
+            itemCode: confirmedBooking.paymentReference,
+            curriculum: confirmedBooking.curriculum,
+            priceSar: confirmedBooking.priceSar,
+            studentName: confirmedBooking.studentName,
+            studentEmail: confirmedBooking.contactEmail,
+            extraDetails: `Créneau : ${confirmedBooking.dateSlot} à ${confirmedBooking.timeSlot}`,
+            lang,
+          });
 
-            {confirmedBooking.meetLink ? (
-              <div className="pt-3 border-t border-emerald-200 flex flex-wrap items-center gap-3">
-                <a
-                  href={confirmedBooking.meetLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-4 py-2.5 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2"
-                >
-                  <Video className="w-4 h-4" />
-                  <span>Rejoindre la salle Google Meet</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-                <span className="font-mono text-xs text-emerald-900 bg-white px-3 py-2 rounded-lg border border-emerald-200 select-all">
-                  {confirmedBooking.meetLink}
-                </span>
-                {confirmedBooking.calendarEventLink && (
+          return (
+            <div className="p-5 sm:p-6 rounded-2xl bg-emerald-50 border border-emerald-200 space-y-4">
+              <div className="flex items-start gap-3">
+                <CheckCircle2 className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
+                <div className="space-y-1 text-sm text-emerald-950">
+                  <div className="font-semibold">
+                    {confirmedBooking.paid
+                      ? `Séance activée (${confirmedBooking.paymentReference}) · ${confirmedBooking.trainerName}`
+                      : `Demande enregistrée (${confirmedBooking.paymentReference}) · En attente d’activation WhatsApp avec ${confirmedBooking.trainerName}`}
+                  </div>
+                  <div className="text-xs text-emerald-900 tabular-nums">
+                    {confirmedBooking.curriculum} ({confirmedBooking.subject}) · {confirmedBooking.dateSlot} ·{' '}
+                    {confirmedBooking.timeSlot} · {confirmedBooking.durationLabel} ·{' '}
+                    <strong className="font-mono">{confirmedBooking.priceSar} SAR</strong>
+                  </div>
+                  {confirmedBooking.attachedWeaknesses.length > 0 && (
+                    <div className="text-xs text-emerald-900 pt-1">
+                      <strong>Points faibles envoyés :</strong> {confirmedBooking.attachedWeaknesses.join(' · ')}
+                    </div>
+                  )}
+                  {confirmedBooking.themesToCover.length > 0 && (
+                    <div className="text-xs text-emerald-900">
+                      <strong>Thèmes &amp; leçons :</strong> {confirmedBooking.themesToCover.join(' · ')}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {!confirmedBooking.paid ? (
+                <div className="pt-3 border-t border-emerald-200 flex flex-wrap items-center justify-between gap-3">
+                  <span className="text-xs text-emerald-900">
+                    Cliquez ci-contre pour envoyer cette demande à <strong>{trainerWaInfo.defaultName}</strong> sur WhatsApp et activer votre séance.
+                  </span>
                   <a
-                    href={confirmedBooking.calendarEventLink}
+                    href={bookingWaUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-3.5 py-2 bg-white border border-emerald-300 text-emerald-900 text-xs font-semibold rounded-xl inline-flex items-center gap-1.5"
+                    className="px-4 py-2.5 bg-[#16A34A] hover:bg-[#15803D] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2 shrink-0"
                   >
-                    <Calendar className="w-3.5 h-3.5" />
-                    <span>Google Agenda</span>
+                    <MessageCircle className="w-4 h-4" />
+                    <span>Envoyer sur WhatsApp ({trainerWaInfo.phoneDisplay})</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
                   </a>
-                )}
-              </div>
-            ) : (
-              <div className="pt-3 border-t border-emerald-200 space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <span className="text-xs text-emerald-900">
-                    {meetWarning
-                      ? `${meetWarning} — Cliquez ci-contre pour générer automatiquement la salle Google Meet.`
-                      : 'Votre paiement est validé. Connectez Google pour générer le lien Google Meet partagé avec votre formateur.'}
+                </div>
+              ) : confirmedBooking.meetLink ? (
+                <div className="pt-3 border-t border-emerald-200 flex flex-wrap items-center gap-3">
+                  <a
+                    href={confirmedBooking.meetLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2.5 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2"
+                  >
+                    <Video className="w-4 h-4" />
+                    <span>Rejoindre la salle Google Meet</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                  <span className="font-mono text-xs text-emerald-900 bg-white px-3 py-2 rounded-lg border border-emerald-200 select-all">
+                    {confirmedBooking.meetLink}
                   </span>
-                  <div className="flex flex-wrap items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      disabled={generatingMeet}
-                      onClick={handleGenerateMeetPostPayment}
-                      className="px-4 py-2.5 bg-[#0F2537] hover:bg-[#0B6E8C] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2 cursor-pointer"
-                    >
-                      <Video className="w-4 h-4" />
-                      <span>{generatingMeet ? 'Création Google Meet...' : 'Générer le lien Google Meet'}</span>
-                    </button>
+                  {confirmedBooking.calendarEventLink && (
                     <a
-                      href="https://meet.google.com/new"
+                      href={confirmedBooking.calendarEventLink}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="px-3.5 py-2.5 bg-white border border-emerald-300 hover:border-[#0B6E8C] text-[#0F2537] text-xs font-semibold rounded-xl inline-flex items-center gap-1.5"
+                      className="px-3.5 py-2 bg-white border border-emerald-300 text-emerald-900 text-xs font-semibold rounded-xl inline-flex items-center gap-1.5"
                     >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>Ouvrir Google Meet directement</span>
+                      <Calendar className="w-3.5 h-3.5" />
+                      <span>Google Agenda</span>
                     </a>
-                  </div>
+                  )}
                 </div>
+              ) : (
+                <div className="pt-3 border-t border-emerald-200 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <span className="text-xs text-emerald-900">
+                      {meetWarning
+                        ? `${meetWarning} — Cliquez ci-contre pour générer automatiquement la salle Google Meet.`
+                        : 'Votre séance est activée. Connectez Google pour générer le lien Google Meet partagé avec votre formateur.'}
+                    </span>
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        disabled={generatingMeet}
+                        onClick={handleGenerateMeetPostPayment}
+                        className="px-4 py-2.5 bg-[#0F2537] hover:bg-[#0B6E8C] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2 cursor-pointer"
+                      >
+                        <Video className="w-4 h-4" />
+                        <span>{generatingMeet ? 'Création Google Meet...' : 'Générer le lien Google Meet'}</span>
+                      </button>
+                      <a
+                        href="https://meet.google.com/new"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3.5 py-2.5 bg-white border border-emerald-300 hover:border-[#0B6E8C] text-[#0F2537] text-xs font-semibold rounded-xl inline-flex items-center gap-1.5"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Ouvrir Google Meet directement</span>
+                      </a>
+                    </div>
+                  </div>
 
-                <form onSubmit={handleSaveManualMeetLink} className="flex flex-col sm:flex-row gap-2">
-                  <input
-                    type="url"
-                    value={manualMeetUrl}
-                    onChange={(e) => setManualMeetUrl(e.target.value)}
-                    placeholder="Ou collez le lien Google Meet créé (https://meet.google.com/xxx-xxxx-xxx) pour le partager au formateur..."
-                    className="flex-1 px-3 py-2 text-xs bg-white border border-emerald-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0B6E8C]"
-                  />
-                  <button
-                    type="submit"
-                    disabled={savingManualMeet || !manualMeetUrl.trim()}
-                    className="px-4 py-2 bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                  >
-                    <Link2 className="w-3.5 h-3.5" />
-                    <span>{savingManualMeet ? 'Enregistrement...' : 'Associer le lien Meet'}</span>
-                  </button>
-                </form>
-              </div>
-            )}
-          </div>
-        )}
+                  <form onSubmit={handleSaveManualMeetLink} className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="url"
+                      value={manualMeetUrl}
+                      onChange={(e) => setManualMeetUrl(e.target.value)}
+                      placeholder="Ou collez le lien Google Meet créé (https://meet.google.com/xxx-xxxx-xxx) pour le partager au formateur..."
+                      className="flex-1 px-3 py-2 text-xs bg-white border border-emerald-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0B6E8C]"
+                    />
+                    <button
+                      type="submit"
+                      disabled={savingManualMeet || !manualMeetUrl.trim()}
+                      className="px-4 py-2 bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <Link2 className="w-3.5 h-3.5" />
+                      <span>{savingManualMeet ? 'Enregistrement...' : 'Associer le lien Meet'}</span>
+                    </button>
+                  </form>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {error && (
           <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-sm text-red-900">
@@ -1002,76 +1038,64 @@ export function TutoringSection({
             </div>
           </div>
 
-          {/* Row 4: Payment & Google Workspace Connect for Instant Meet Link */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 pt-4 border-t border-slate-200 items-end">
-            <div className="lg:col-span-4">
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                {lang === 'ar' ? 'وسيلة الدفع' : lang === 'en' ? 'Payment Method' : 'Moyen de paiement'}
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {['Mada', 'Visa / MC', 'Apple Pay'].map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setPaymentMethod(m)}
-                    className={`px-2.5 py-2.5 rounded-xl border text-xs font-semibold cursor-pointer ${
-                      paymentMethod === m
-                        ? 'border-[#0B6E8C] bg-[#EEF5F9] text-[#0F2537]'
-                        : 'border-slate-200 text-slate-700'
-                    }`}
-                  >
-                    {m}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="lg:col-span-4">
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Google Meet &amp; Google Calendar (lien après paiement)
-              </label>
-              {googleToken ? (
-                <div className="px-3.5 py-2.5 rounded-xl border border-emerald-300 bg-emerald-50 text-xs font-semibold text-emerald-900 flex items-center justify-between gap-2">
-                  <span className="truncate">Connecté : {googleEmail}</span>
-                  <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+          {/* Row 4: Direct WhatsApp Teacher Activation & Request Submission */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 pt-4 border-t border-slate-200 items-center">
+            <div className="lg:col-span-6 p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-bold text-emerald-950">
+                  {lang === 'ar'
+                    ? `واتساب ${activeTrainer.name}`
+                    : lang === 'en'
+                      ? `WhatsApp · ${activeTrainer.name}`
+                      : `WhatsApp · ${activeTrainer.name}`}
                 </div>
-              ) : (
-                <button
-                  type="button"
-                  disabled={googleConnecting}
-                  onClick={handleConnectGoogle}
-                  className="gsi-material-button w-full"
-                >
-                  <div className="gsi-material-button-content-wrapper">
-                    <div className="gsi-material-button-icon">
-                      <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" style={{ display: 'block' }}>
-                        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-                        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-                        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-                        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-                      </svg>
-                    </div>
-                    <span>{googleConnecting ? 'Connexion Google...' : 'Sign in with Google (Meet)'}</span>
-                  </div>
-                </button>
-              )}
+                <div className="font-mono text-xs font-semibold text-emerald-800" dir="ltr">
+                  {TEACHER_WHATSAPP[activeTrainer.id].phoneDisplay}
+                </div>
+              </div>
+              <a
+                href={buildWhatsAppActivationUrl({
+                  teacherId: activeTrainer.id,
+                  teacherDisplayName: activeTrainer.name,
+                  itemType: 'tutoring',
+                  itemTitle: `${curriculum} · ${subject} (${durationMinutes} min)`,
+                  curriculum,
+                  priceSar: estimatedPrice,
+                  studentName: studentName || user?.name,
+                  studentEmail: user?.email,
+                  extraDetails: `Créneau : ${dateSlot} à ${timeSlot}${notes ? ` | ${notes}` : ''}`,
+                  lang,
+                })}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2.5 bg-[#16A34A] hover:bg-[#15803D] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 shrink-0"
+              >
+                <MessageCircle className="w-4 h-4" />
+                <span>
+                  {lang === 'ar'
+                    ? 'واتساب مباشر'
+                    : lang === 'en'
+                      ? 'Open WhatsApp'
+                      : 'Ouvrir WhatsApp'}
+                </span>
+              </a>
             </div>
 
-            <div className="lg:col-span-4">
+            <div className="lg:col-span-6">
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full py-3 px-5 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-sm font-semibold rounded-xl transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
+                className="w-full py-3.5 px-5 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-sm font-semibold rounded-xl transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
               >
-                <CreditCard className="w-4 h-4" />
+                <MessageCircle className="w-4 h-4" />
                 <span>
                   {submitting
-                    ? 'Paiement & Création Meet...'
+                    ? 'Enregistrement...'
                     : lang === 'ar'
-                      ? `دفع ${estimatedPrice} ر.س وإنشاء Google Meet`
+                      ? `حفظ الطلب والتفعيل عبر واتساب (${estimatedPrice} ر.س)`
                       : lang === 'en'
-                        ? `Pay ${estimatedPrice} SAR & Create Meet`
-                        : `Payer ${estimatedPrice} SAR & Réserver`}
+                        ? `Save Request & Activate via WhatsApp (${estimatedPrice} SAR)`
+                        : `Enregistrer la demande & Activer via WhatsApp (${estimatedPrice} SAR)`}
                 </span>
               </button>
             </div>

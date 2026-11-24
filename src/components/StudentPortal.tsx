@@ -10,12 +10,14 @@ import {
   Link2,
   Lock,
   LogOut,
+  MessageCircle,
   Sparkles,
   Target,
   Video,
 } from 'lucide-react';
 import { apiRequest, downloadProtectedPaper } from '../utils/api';
 import { getCachedGoogleAccessToken, signInWithGoogleForMeet } from '../utils/googleMeetAuth';
+import { TEACHER_WHATSAPP, buildWhatsAppActivationUrl } from '../utils/whatsapp';
 import { TRANSLATIONS } from '../i18n/translations';
 import type {
   BookingItem,
@@ -601,7 +603,49 @@ export function StudentPortal({
                           </button>
                         </div>
                       </div>
-                    ) : null}
+                    ) : (
+                      <div className="w-full flex flex-wrap items-center justify-between gap-2">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-amber-100 text-amber-900 text-[11px] font-semibold">
+                          {lang === 'ar'
+                            ? 'في انتظار التفعيل عبر واتساب'
+                            : lang === 'en'
+                              ? 'Pending WhatsApp Activation'
+                              : 'En attente d’activation WhatsApp'}
+                        </span>
+                        {(() => {
+                          const tId = b.trainerId === 'mohamed' ? 'mohamed' : 'marwan';
+                          const teacherInfo = TEACHER_WHATSAPP[tId];
+                          const waUrl = buildWhatsAppActivationUrl({
+                            teacherId: tId,
+                            lang,
+                            itemTitle: `${b.subject} — ${b.dateSlot} ${b.timeSlot}`,
+                            itemType: 'tutoring',
+                            curriculum: b.curriculum,
+                            priceSar: b.priceSar,
+                            studentName: user.name,
+                            studentEmail: user.email,
+                            extraDetails: b.paymentReference ? `Réf: ${b.paymentReference}` : undefined,
+                          });
+                          return (
+                            <a
+                              href={waUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-3 py-1.5 bg-[#128C7E] hover:bg-[#0E7266] text-white text-xs font-semibold rounded-lg inline-flex items-center gap-1.5"
+                            >
+                              <MessageCircle className="w-3.5 h-3.5" />
+                              <span>
+                                {lang === 'ar'
+                                  ? `واتساب (${teacherInfo.phoneDisplay})`
+                                  : lang === 'en'
+                                    ? `WhatsApp ${teacherInfo.defaultName} (${teacherInfo.phoneDisplay})`
+                                    : `WhatsApp ${teacherInfo.defaultName} (${teacherInfo.phoneDisplay})`}
+                              </span>
+                            </a>
+                          );
+                        })()}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

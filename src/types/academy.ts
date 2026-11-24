@@ -370,6 +370,8 @@ export interface RegisteredStudentSummary {
   hasAllAccessPass: boolean;
   enrolledCoursesCount: number;
   unlockedPapersCount: number;
+  enrolledCourseIds?: string[];
+  unlockedPaperIds?: string[];
   paidBookingsCount: number;
   paidTotalSar: number;
   trialStartedAt: string | null;

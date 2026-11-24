@@ -291,77 +291,11 @@ export function createApiApp() {
     });
   });
 
-  app.post('/api/orders/checkout', requireAuth, async (req: AuthenticatedRequest, res) => {
-    try {
-      const user = req.user!;
-      const { paperIds, buyAllAccessPass, paymentMethod } = req.body ?? {};
-      const method = isNonEmptyString(paymentMethod, 40) ? paymentMethod.trim() : 'Mada / Visa';
-
-      const isPass = Boolean(buyAllAccessPass);
-      let resolvedItems: { paperId: string; title: string; priceSar: number }[] = [];
-      let serverTotalSar = 0;
-
-      if (isPass) {
-        serverTotalSar = ALL_ACCESS_PASS_PRICE_SAR;
-        resolvedItems = [
-          {
-            paperId: 'all-access-pass',
-            title: 'Pass Annuel Tous Examens + Corrections Officielles',
-            priceSar: ALL_ACCESS_PASS_PRICE_SAR,
-          },
-        ];
-      } else {
-        if (!Array.isArray(paperIds) || paperIds.length === 0) {
-          res.status(400).json({ error: 'Sélectionnez au moins un sujet Past Paper à débloquer.' });
-          return;
-        }
-        const uniqueIds = Array.from(new Set(paperIds.filter((id) => typeof id === 'string')));
-        for (const id of uniqueIds) {
-          const catalogItem = await db.findPastPaperById(id);
-          if (!catalogItem) {
-            res.status(404).json({ error: `Sujet introuvable : ${id}` });
-            return;
-          }
-          if (!user.unlockedPapers.includes(id) && !user.hasAllAccessPass) {
-            resolvedItems.push({
-              paperId: catalogItem.id,
-              title: catalogItem.title,
-              priceSar: catalogItem.priceSar,
-            });
-            serverTotalSar += catalogItem.priceSar;
-          }
-        }
-        if (resolvedItems.length === 0) {
-          res.status(400).json({ error: 'Ces sujets sont déjà débloqués sur votre compte.' });
-          return;
-        }
-      }
-
-      const refCode = `ALM-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
-      const order = await db.createOrder({
-        userId: user.id,
-        customerEmail: user.email,
-        items: resolvedItems,
-        isAllAccessPass: isPass,
-        totalSar: serverTotalSar,
-        paymentMethod: method,
-        referenceCode: refCode,
-        status: 'paid',
-      });
-
-      const updatedUser = await db.grantPaperAccess(
-        user.id,
-        isPass ? [] : resolvedItems.map((i) => i.paperId),
-        isPass
-      );
-
-      res.status(201).json({
-        order,
-        user: updatedUser ? sanitizeUser(updatedUser) : sanitizeUser(user),
-      });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message || 'Erreur lors du traitement de la commande.' });
-    }
+  app.post('/api/orders/checkout', requireAuth, (_req: AuthenticatedRequest, res) => {
+    res.status(403).json({
+      error:
+        'Le paiement en ligne est désactivé. Contactez votre formateur sur WhatsApp (Mr. Marwan : +966503197969 · M. Mohamed : +966594228783) pour activer ce Past Paper.',
+    });
   });
 
   app.get('/api/past-papers/:id/view', requireAuth, async (req: AuthenticatedRequest, res) => {
@@ -619,55 +553,7 @@ export function createApiApp() {
         ? themesToCover.filter((th) => isNonEmptyString(th, 200)).map((th) => th.trim()).slice(0, 12)
         : [];
 
-      const payMethod = isNonEmptyString(paymentMethod, 50) ? paymentMethod.trim() : 'Mada / Visa';
-      const payRef = `TUT-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
-
-      // Record paid order first
-      await db.createOrder({
-        userId: user.id,
-        customerEmail: user.email,
-        items: [
-          {
-            paperId: `tutoring-${trainer.id}-${mins}m`,
-            title: `Tutorat Privé ${trainer.name} (${durationLabel})`,
-            priceSar,
-          },
-        ],
-        isAllAccessPass: false,
-        totalSar: priceSar,
-        paymentMethod: payMethod,
-        referenceCode: payRef,
-        status: 'paid',
-      });
-
-      // AFTER payment succeeds, generate live Google Meet & Calendar links if Google token provided
-      const headerGoogleToken =
-        typeof req.headers['x-google-access-token'] === 'string'
-          ? req.headers['x-google-access-token']
-          : '';
-      const activeGoogleToken =
-        (typeof googleAccessToken === 'string' && googleAccessToken.trim()) || headerGoogleToken;
-
-      let meetLink = '';
-      let calendarEventLink = '';
-      let meetWarning = '';
-
-      if (activeGoogleToken) {
-        const meetResult = await createGoogleMeetAndCalendarEvent(activeGoogleToken, {
-          studentName: isNonEmptyString(studentName, 100) ? studentName.trim() : user.name,
-          trainerName: trainer.name,
-          curriculum: curriculum.trim(),
-          subject: subject.trim(),
-          dateSlot: dateSlot.trim(),
-          timeSlot: timeSlot.trim(),
-          durationMinutes: mins,
-          weaknesses: cleanWeaknesses,
-          themes: cleanThemes,
-        });
-        meetLink = meetResult.meetLink;
-        calendarEventLink = meetResult.calendarEventLink;
-        meetWarning = meetResult.warning || '';
-      }
+      const waRef = `WA-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 
       const booking = await db.createBooking({
         userId: user.id,
@@ -685,19 +571,19 @@ export function createApiApp() {
         timeSlot: timeSlot.trim(),
         attachedWeaknesses: cleanWeaknesses,
         themesToCover: cleanThemes,
-        paymentMethod: payMethod,
-        paymentReference: payRef,
-        paid: true,
-        meetLink,
-        calendarEventLink,
+        paymentMethod: 'WhatsApp Teacher Activation',
+        paymentReference: waRef,
+        paid: false,
+        meetLink: '',
+        calendarEventLink: '',
         priceSar,
-        status: 'confirmed',
+        status: 'pending',
         notes: typeof notes === 'string' ? notes.slice(0, 500).trim() : '',
       });
 
-      res.status(201).json({ booking, meetWarning: meetWarning || undefined });
+      res.status(201).json({ booking });
     } catch (err: any) {
-      res.status(500).json({ error: err?.message || 'Erreur lors de la réservation.' });
+      res.status(500).json({ error: err?.message || 'Erreur lors de la demande de séance.' });
     }
   });
 
@@ -1037,117 +923,11 @@ export function createApiApp() {
     });
   });
 
-  app.post('/api/paid-courses/enroll', requireAuth, async (req: AuthenticatedRequest, res) => {
-    try {
-      const user = req.user!;
-      const {
-        courseId,
-        paymentMethod,
-        trainerId,
-        dateSlot,
-        timeSlot,
-        notes,
-        googleAccessToken,
-      } = req.body ?? {};
-      const course = PAID_COURSES_CATALOG.find((c) => c.id === courseId);
-      if (!course) {
-        res.status(404).json({ error: 'Cours payant introuvable.' });
-        return;
-      }
-      if (user.enrolledCourses?.includes(course.id)) {
-        res.status(400).json({ error: 'Vous êtes déjà inscrit à ce cours intensif.' });
-        return;
-      }
-
-      const method = isNonEmptyString(paymentMethod, 40) ? paymentMethod.trim() : 'Mada / Visa';
-      const refCode = `CRS-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
-
-      const order = await db.createOrder({
-        userId: user.id,
-        customerEmail: user.email,
-        items: [{ paperId: course.id, title: course.title, priceSar: course.priceSar }],
-        isAllAccessPass: false,
-        totalSar: course.priceSar,
-        paymentMethod: method,
-        referenceCode: refCode,
-        status: 'paid',
-      });
-
-      const updatedUser = await db.enrollCourse(user.id, course.id);
-
-      // Automatically assign selected trainer (or course lead trainer) and generate a Paid Training Report + optional Google Meet
-      const resolvedTrainerId: 'marwan' | 'mohamed' =
-        trainerId === 'mohamed' || trainerId === 'marwan' ? trainerId : course.trainerId;
-      const chosenTrainer = await db.findTrainerById(resolvedTrainerId);
-      const trainerName = chosenTrainer?.name || course.trainerName;
-      const defaultDate = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-      const chosenDate = isNonEmptyString(dateSlot, 40) ? dateSlot.trim() : defaultDate;
-      const chosenTime = isNonEmptyString(timeSlot, 40) ? timeSlot.trim() : '17:00 AST';
-
-      const headerGoogleToken =
-        typeof req.headers['x-google-access-token'] === 'string'
-          ? req.headers['x-google-access-token']
-          : '';
-      const activeGoogleToken =
-        (typeof googleAccessToken === 'string' && googleAccessToken.trim()) || headerGoogleToken;
-
-      const weaknesses = Array.isArray(user.teacherWeaknesses) ? user.teacherWeaknesses : [];
-      const themes = course.syllabusHighlights.slice(0, 4);
-      let meetLink = '';
-      let calendarEventLink = '';
-
-      if (activeGoogleToken) {
-        const meetRes = await createGoogleMeetAndCalendarEvent(activeGoogleToken, {
-          studentName: user.name,
-          trainerName,
-          curriculum: course.curriculumLabel,
-          subject: course.title,
-          dateSlot: chosenDate,
-          timeSlot: chosenTime,
-          durationMinutes: 60,
-          weaknesses,
-          themes,
-        });
-        meetLink = meetRes.meetLink;
-        calendarEventLink = meetRes.calendarEventLink;
-      }
-
-      const booking = await db.createBooking({
-        userId: user.id,
-        studentName: user.name,
-        contactEmail: user.email,
-        trainerId: resolvedTrainerId,
-        trainerName,
-        language: course.language,
-        curriculum: course.curriculumLabel,
-        subject: course.title,
-        sessionPackage: `Cours Intensif Payant (${course.sessionsCount} séances)`,
-        durationMinutes: 60,
-        durationLabel: '60 min (Accueil & Diagnostic)',
-        dateSlot: chosenDate,
-        timeSlot: chosenTime,
-        attachedWeaknesses: weaknesses,
-        themesToCover: themes,
-        paymentMethod: method,
-        paymentReference: refCode,
-        paid: true,
-        meetLink,
-        calendarEventLink,
-        priceSar: course.priceSar,
-        status: 'confirmed',
-        notes: isNonEmptyString(notes, 400)
-          ? notes.trim()
-          : `Inscription confirmée au programme payant ${course.title}.`,
-      });
-
-      res.status(201).json({
-        order,
-        booking,
-        user: updatedUser ? sanitizeUser(updatedUser) : sanitizeUser(user),
-      });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message || 'Erreur lors de l’inscription au cours.' });
-    }
+  app.post('/api/paid-courses/enroll', requireAuth, (_req: AuthenticatedRequest, res) => {
+    res.status(403).json({
+      error:
+        'Le paiement en ligne est désactivé. Contactez votre formateur sur WhatsApp (Mr. Marwan : +966503197969 · M. Mohamed : +966594228783) pour activer votre accès à ce cours.',
+    });
   });
 
   // --- Student Writing Submission (accessible to students) ---
@@ -1373,15 +1153,20 @@ export function createApiApp() {
           name: u.name,
           email: u.email,
           role: u.role,
+          preferredTrack: u.preferredTrack,
           lockedGrade: u.lockedGrade,
           lockedCurriculum: u.lockedCurriculum,
           hasPaidAccess: hasPaid,
+          hasAllAccessPass: Boolean(u.hasAllAccessPass),
           enrolledCoursesCount: u.enrolledCourses?.length || 0,
           unlockedPapersCount: u.unlockedPapers?.length || 0,
-          bookingsCount: userBookings.length,
-          totalOrdersSar,
+          enrolledCourseIds: u.enrolledCourses || [],
+          unlockedPaperIds: u.unlockedPapers || [],
+          paidBookingsCount: userBookings.filter((b) => b.paid).length,
+          paidTotalSar: totalOrdersSar,
           trialSecondsRemaining: ent.trialSecondsRemaining,
           trialExpired: ent.trialExpired,
+          assignedSkills: u.assignedSkills || [],
           createdAt: u.createdAt,
         };
       });
@@ -1389,6 +1174,130 @@ export function createApiApp() {
       res.json({ accounts });
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Impossible de charger les comptes élèves.' });
+    }
+  });
+
+  app.post('/api/teacher/accounts/:userId/activate', async (req: AuthenticatedRequest, res) => {
+    try {
+      const userId = req.params.userId;
+      const targetUser = await db.findUserById(userId);
+      if (!targetUser) {
+        res.status(404).json({ error: 'Compte élève introuvable.' });
+        return;
+      }
+
+      const { courseIds, paperIds, allAccessPass } = req.body ?? {};
+      const validCourseIds = Array.isArray(courseIds)
+        ? Array.from(new Set(courseIds.filter((id) => typeof id === 'string')))
+        : [];
+      const validPaperIds = Array.isArray(paperIds)
+        ? Array.from(new Set(paperIds.filter((id) => typeof id === 'string')))
+        : [];
+      const grantAllAccess = Boolean(allAccessPass);
+
+      const orderItems: { paperId: string; title: string; priceSar: number }[] = [];
+      let totalSar = 0;
+
+      for (const cid of validCourseIds) {
+        const course = PAID_COURSES_CATALOG.find((c) => c.id === cid);
+        if (!course) {
+          res.status(404).json({ error: `Cours introuvable : ${cid}` });
+          return;
+        }
+        await db.enrollCourse(userId, course.id);
+        if (!targetUser.enrolledCourses.includes(course.id)) {
+          orderItems.push({ paperId: course.id, title: course.title, priceSar: course.priceSar });
+          totalSar += course.priceSar;
+        }
+      }
+
+      const verifiedPaperIds: string[] = [];
+      for (const pid of validPaperIds) {
+        const paper = await db.findPastPaperById(pid);
+        if (!paper) {
+          res.status(404).json({ error: `Past Paper introuvable : ${pid}` });
+          return;
+        }
+        verifiedPaperIds.push(paper.id);
+        if (!targetUser.unlockedPapers.includes(paper.id) && !targetUser.hasAllAccessPass) {
+          orderItems.push({ paperId: paper.id, title: paper.title, priceSar: paper.priceSar });
+          totalSar += paper.priceSar;
+        }
+      }
+
+      if (grantAllAccess && !targetUser.hasAllAccessPass) {
+        orderItems.push({
+          paperId: 'all-access-pass',
+          title: 'Pass Annuel Tous Examens + Corrections Officielles',
+          priceSar: ALL_ACCESS_PASS_PRICE_SAR,
+        });
+        totalSar += ALL_ACCESS_PASS_PRICE_SAR;
+      }
+
+      if (verifiedPaperIds.length > 0 || grantAllAccess) {
+        await db.grantPaperAccess(userId, verifiedPaperIds, grantAllAccess);
+      }
+
+      if (orderItems.length === 0 && !grantAllAccess && validCourseIds.length === 0 && verifiedPaperIds.length === 0) {
+        res.status(400).json({ error: 'Sélectionnez au moins un cours, un Past Paper ou le Pass Annuel.' });
+        return;
+      }
+
+      if (orderItems.length > 0) {
+        const refCode = `WA-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+        await db.createOrder({
+          userId: targetUser.id,
+          customerEmail: targetUser.email,
+          items: orderItems,
+          isAllAccessPass: grantAllAccess,
+          totalSar,
+          paymentMethod: `WhatsApp Activation (${req.teacher?.teacherId || 'teacher'})`,
+          referenceCode: refCode,
+          status: 'paid',
+        });
+      }
+
+      const updatedUser = await db.findUserById(userId);
+      res.json({
+        ok: true,
+        user: updatedUser ? sanitizeUser(updatedUser) : sanitizeUser(targetUser),
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de l’activation du compte.' });
+    }
+  });
+
+  app.post('/api/teacher/bookings/:id/confirm', async (req: AuthenticatedRequest, res) => {
+    try {
+      const existing = await db.findBookingById(req.params.id);
+      if (!existing) {
+        res.status(404).json({ error: 'Séance introuvable.' });
+        return;
+      }
+      if (existing.paid && existing.status === 'confirmed') {
+        res.json({ booking: existing });
+        return;
+      }
+      const updated = await db.confirmBooking(existing.id);
+      await db.createOrder({
+        userId: existing.userId,
+        customerEmail: existing.contactEmail,
+        items: [
+          {
+            paperId: `tutoring-${existing.trainerId}-${existing.durationMinutes}m`,
+            title: `Tutorat Privé ${existing.trainerName} (${existing.durationLabel})`,
+            priceSar: existing.priceSar,
+          },
+        ],
+        isAllAccessPass: false,
+        totalSar: existing.priceSar,
+        paymentMethod: `WhatsApp Activation (${req.teacher?.teacherId || 'teacher'})`,
+        referenceCode: existing.paymentReference || `WA-${crypto.randomBytes(3).toString('hex').toUpperCase()}`,
+        status: 'paid',
+      });
+      res.json({ booking: updated || existing });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de la confirmation de la séance.' });
     }
   });
 

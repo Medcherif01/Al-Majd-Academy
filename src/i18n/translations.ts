@@ -106,13 +106,13 @@ export const TRANSLATIONS: Record<
     generatingExamBtn: 'Rédaction par Gemini en cours...',
     pastPapersTitle: 'Coffre Past Papers & Corrections Officielles',
     pastPapersSubtitle:
-      'Consultez gratuitement la Question 1 et le règlement officiel, puis débloquez le sujet complet avec son corrigé détaillé (Mark Scheme) prêt à imprimer.',
+      'Consultez gratuitement la Question 1 et le règlement officiel, puis contactez votre formateur sur WhatsApp pour activer le sujet complet et sa correction (Mark Scheme).',
     allAccessBannerTitle: 'Pass Semestre Tous Examens & Corrections',
     allAccessBannerDesc:
-      'Accès illimité au téléchargement de tous les Past Papers et leurs barèmes officiels (SAT, IB, IGCSE, NAFES, Qudurat, Bac).',
-    unlockAllAccessBtn: 'Débloquer le Pass',
+      'Accès illimité au téléchargement de tous les Past Papers et leurs barèmes officiels (SAT, IB, IGCSE, NAFES, Qudurat, Bac) — activation directe via WhatsApp.',
+    unlockAllAccessBtn: 'Activer via WhatsApp',
     previewQ1: 'Aperçu Q1',
-    unlockPaperBtn: 'Débloquer & Télécharger',
+    unlockPaperBtn: 'Activer via WhatsApp',
     downloadPaperBtn: 'Télécharger Sujet + Corrigé',
     tutorsTitle: 'Formateurs en Ligne Certifiés',
     tutorsSubtitle:
@@ -171,13 +171,13 @@ export const TRANSLATIONS: Record<
     generatingExamBtn: 'Drafting with Gemini...',
     pastPapersTitle: 'Past Papers & Official Mark Schemes Vault',
     pastPapersSubtitle:
-      'Inspect Question 1 and board rules for free, then unlock the full exam paper and step-by-step official correction for instant download.',
+      'Inspect Question 1 and board rules for free, then contact your teacher on WhatsApp to activate the full exam paper and official Mark Scheme.',
     allAccessBannerTitle: 'Full Semester All-Access Pass',
     allAccessBannerDesc:
-      'Unlock unlimited downloads of all Past Papers and official Mark Schemes across SAT, IB, IGCSE, NAFES, Qudurat, and French Bac.',
-    unlockAllAccessBtn: 'Unlock Full Pass',
+      'Unlock unlimited downloads of all Past Papers and official Mark Schemes across SAT, IB, IGCSE, NAFES, Qudurat, and French Bac via direct teacher WhatsApp activation.',
+    unlockAllAccessBtn: 'Activate via WhatsApp',
     previewQ1: 'Preview Q1',
-    unlockPaperBtn: 'Unlock & Download',
+    unlockPaperBtn: 'Activate via WhatsApp',
     downloadPaperBtn: 'Download Paper + Correction',
     tutorsTitle: 'Certified Online Tutors',
     tutorsSubtitle:
@@ -236,13 +236,13 @@ export const TRANSLATIONS: Record<
     generatingExamBtn: 'جارٍ إعداد الاختبار...',
     pastPapersTitle: 'خزانة الاختبارات السابقة والحلول النموذجية',
     pastPapersSubtitle:
-      'عاين السؤال الأول مجاناً، ثم قم بفتح النسخة الكاملة مع نموذج الإجابة الرسمي القابل للتحميل والطباعة.',
+      'عاين السؤال الأول مجاناً، ثم تواصل مع مدربك عبر واتساب لتفعيل النسخة الكاملة مع نموذج الإجابة الرسمي القابل للتحميل.',
     allAccessBannerTitle: 'الباقة الشاملة لجميع الاختبارات والحلول',
     allAccessBannerDesc:
-      'وصول غير محدود لتحميل جميع الاختبارات السابقة ونماذج التصحيح الرسمية لكافة المناهج.',
-    unlockAllAccessBtn: 'تفعيل الباقة الشاملة',
+      'وصول غير محدود لتحميل جميع الاختبارات السابقة ونماذج التصحيح الرسمية لكافة المناهج — التفعيل مباشرة عبر واتساب المدرب.',
+    unlockAllAccessBtn: 'تفعيل عبر واتساب',
     previewQ1: 'معاينة س1',
-    unlockPaperBtn: 'شراء وتحميل',
+    unlockPaperBtn: 'تفعيل عبر واتساب',
     downloadPaperBtn: 'تحميل الاختبار + الحل',
     tutorsTitle: 'المدربون المباشرون عبر الإنترنت',
     tutorsSubtitle:

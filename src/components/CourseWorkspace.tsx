@@ -3,28 +3,29 @@ import { motion } from 'motion/react';
 import {
   BookOpen,
   Calendar,
+  Check,
   CheckCircle2,
   ChevronRight,
-  CreditCard,
+  Copy,
   Download,
   ExternalLink,
   FileText,
   Lock,
+  MessageCircle,
   Scale,
   Sparkles,
   Unlock,
-  Video,
   X,
 } from 'lucide-react';
 import { COURSE_MODULES } from '../data/curriculumData';
 import { TRANSLATIONS } from '../i18n/translations';
-import { apiRequest } from '../utils/api';
-import {
-  getCachedGoogleAccessToken,
-  initGoogleWorkspaceAuth,
-  signInWithGoogleForMeet,
-} from '../utils/googleMeetAuth';
 import { MathText } from '../utils/mathFormat';
+import {
+  TEACHER_WHATSAPP,
+  buildWhatsAppActivationMessage,
+  buildWhatsAppActivationUrl,
+  resolveTeacherIdForCurriculum,
+} from '../utils/whatsapp';
 import { ExamPrepHubs } from './ExamPrepHubs';
 import type {
   BookingItem,
@@ -137,7 +138,7 @@ export function CourseWorkspace({
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [checkpointSubmitted, setCheckpointSubmitted] = useState(false);
 
-  // Paid Course Enrollment + Trainer Choice + Google Meet Scheduling
+  // Paid Course WhatsApp Activation State
   const [checkoutCourse, setCheckoutCourse] = useState<PaidCourseItem | null>(null);
   const [chosenTrainerId, setChosenTrainerId] = useState<'marwan' | 'mohamed'>('marwan');
   const [chosenDateSlot, setChosenDateSlot] = useState<string>(() => {
@@ -147,22 +148,9 @@ export function CourseWorkspace({
   });
   const [chosenTimeSlot, setChosenTimeSlot] = useState<string>('17:00 AST');
   const [courseNotes, setCourseNotes] = useState<string>('');
-  const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(() =>
-    getCachedGoogleAccessToken()
-  );
-  const [googleEmail, setGoogleEmail] = useState<string | null>(null);
-  const [connectingGoogle, setConnectingGoogle] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<string>('Mada · Saudi Payments');
-  const [enrolling, setEnrolling] = useState(false);
-  const [confirmedBooking, setConfirmedBooking] = useState<BookingItem | null>(null);
-  const [generatingMeetForBooking, setGeneratingMeetForBooking] = useState(false);
-  const [enrollMessage, setEnrollMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  useEffect(() => {
-    try {
-      initGoogleWorkspaceAuth();
-    } catch {}
-  }, []);
+  const [guestName, setGuestName] = useState<string>('');
+  const [guestEmail, setGuestEmail] = useState<string>('');
+  const [copiedMsg, setCopiedMsg] = useState<boolean>(false);
 
   const isTrackLocked = Boolean(trackLock && !hasPaidAccess);
   const effectiveTrack: CurriculumKey = isTrackLocked && trackLock ? trackLock.trackKey : selectedTrack;
@@ -255,102 +243,13 @@ export function CourseWorkspace({
     await onMarkLessonComplete(activeLesson.id, isCorrect ? 100 : 50);
   };
 
-  const handleConnectGoogleForCourse = async () => {
-    setConnectingGoogle(true);
-    setEnrollMessage(null);
+  const handleCopyMessage = async (msg: string) => {
     try {
-      const authResult = await signInWithGoogleForMeet();
-      if (authResult) {
-        setGoogleAccessToken(authResult.accessToken);
-        setGoogleEmail(authResult.user.email);
-      }
-    } catch (err: any) {
-      setEnrollMessage({ type: 'error', text: err?.message || 'Connexion Google annulée.' });
-    } finally {
-      setConnectingGoogle(false);
-    }
-  };
-
-  const handleEnrollPaidCourse = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!checkoutCourse) return;
-    if (!user || !token) {
-      setCheckoutCourse(null);
-      onRequireAuth();
-      return;
-    }
-
-    setEnrolling(true);
-    setEnrollMessage(null);
-    try {
-      const res = await apiRequest<{
-        order: { referenceCode: string };
-        booking?: BookingItem;
-        user: UserProfile;
-      }>('/api/paid-courses/enroll', {
-        method: 'POST',
-        token,
-        body: {
-          courseId: checkoutCourse.id,
-          paymentMethod,
-          trainerId: chosenTrainerId,
-          dateSlot: chosenDateSlot,
-          timeSlot: chosenTimeSlot,
-          notes: courseNotes.trim(),
-          googleAccessToken: googleAccessToken || undefined,
-        },
-      });
-      onUserUpdated(res.user);
-      if (res.booking) {
-        setConfirmedBooking(res.booking);
-        onBookingCreated?.(res.booking);
-      }
-      await onRefreshPaidCourses();
-      setEnrollMessage({
-        type: 'success',
-        text:
-          lang === 'ar'
-            ? `تم تسجيلك في الدورة بنجاح (${res.order.referenceCode}) وإرسال التقرير للمدرب.`
-            : lang === 'en'
-              ? `Enrolled (${res.order.referenceCode}). Paid report transmitted to your trainer with Meet scheduling.`
-              : `Inscription payante confirmée (${res.order.referenceCode}). Un rapport complet a été transmis au formateur choisi.`,
-      });
-      setCheckoutCourse(null);
-    } catch (err: any) {
-      setEnrollMessage({ type: 'error', text: err.message });
-    } finally {
-      setEnrolling(false);
-    }
-  };
-
-  const handleCreateMeetForEnrolledBooking = async () => {
-    if (!confirmedBooking || !token) return;
-    setGeneratingMeetForBooking(true);
-    setEnrollMessage(null);
-    try {
-      let gToken = googleAccessToken || getCachedGoogleAccessToken();
-      if (!gToken) {
-        const authResult = await signInWithGoogleForMeet();
-        if (authResult) {
-          gToken = authResult.accessToken;
-          setGoogleAccessToken(gToken);
-          setGoogleEmail(authResult.user.email);
-        }
-      }
-      const res = await apiRequest<{ booking: BookingItem }>(
-        `/api/bookings/${encodeURIComponent(confirmedBooking.id)}/meet`,
-        {
-          method: 'POST',
-          token,
-          body: { googleAccessToken: gToken },
-        }
-      );
-      setConfirmedBooking(res.booking);
-      onBookingCreated?.(res.booking);
-    } catch (err: any) {
-      setEnrollMessage({ type: 'error', text: err?.message || 'Impossible de générer le lien Meet.' });
-    } finally {
-      setGeneratingMeetForBooking(false);
+      await navigator.clipboard.writeText(msg);
+      setCopiedMsg(true);
+      setTimeout(() => setCopiedMsg(false), 2500);
+    } catch {
+      setCopiedMsg(false);
     }
   };
 
@@ -707,24 +606,47 @@ export function CourseWorkspace({
                     <Lock className="w-6 h-6" />
                   </div>
                   <div className="font-mono text-xs font-semibold text-amber-800">
-                    {activeLesson.order} · {lang === 'ar' ? 'فصل مقفل (للمشتركين)' : lang === 'en' ? 'Locked Paid Chapter' : 'Chapitre Réservé aux Inscrits'}
+                    {activeLesson.order} · {lang === 'ar' ? 'فصل مقفل (يتطلب تفعيل المدرب)' : lang === 'en' ? 'Locked Chapter (Teacher Activation)' : 'Chapitre Réservé aux Inscrits'}
                   </div>
                   <h4 className="font-display text-2xl font-bold text-[#0F2537]">
                     {activeLesson.title}
                   </h4>
                   <p className="text-sm text-slate-600 max-w-lg mx-auto leading-relaxed">
                     {lang === 'ar'
-                      ? 'يتيح لك الحساب التجريبي دراسة الفصل 01 فقط. اشترك في البرنامج المدفوع أو احجز حصة مع المدرب لفتح هذا الفصل والملفات الكاملة.'
+                      ? 'يتيح لك الحساب التجريبي دراسة الفصل 01 فقط. تواصل مع مدربك عبر واتساب أو اختر برنامجاً أدناه لتفعيل جميع الفصول.'
                       : lang === 'en'
-                        ? 'Your free demo account gives access only to Chapter 01 (30 min trial). Enroll in the paid program below or book private tutoring to unlock all chapters.'
-                        : 'Votre accès démo limite la consultation au Chapitre 01 (essai 30 min). Rejoignez le programme payant ci-dessous ou réservez un formateur pour débloquer la suite du cours.'}
+                        ? 'Your free demo gives access to Chapter 01 (30 min trial). Contact your teacher on WhatsApp or select a program below to unlock all chapters.'
+                        : 'Votre accès démo limite la consultation au Chapitre 01 (essai 30 min). Contactez votre formateur sur WhatsApp ou sélectionnez un programme ci-dessous pour débloquer la suite du cours.'}
                   </p>
                   <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                    <a
+                      href={buildWhatsAppActivationUrl({
+                        teacherId: resolveTeacherIdForCurriculum(activeCourse.curriculumLabel, activeCourse.leadTrainer.toLowerCase().includes('mohamed') ? 'mohamed' : 'marwan'),
+                        itemType: 'course',
+                        itemTitle: `${activeCourse.title} (${activeLesson.order} - ${activeLesson.title})`,
+                        curriculum: activeCourse.curriculumLabel,
+                        studentName: user?.name,
+                        studentEmail: user?.email,
+                        lang,
+                      })}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-5 py-2.5 bg-[#16A34A] hover:bg-[#15803D] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      <span>
+                        {lang === 'ar'
+                          ? 'تفعيل عبر واتساب'
+                          : lang === 'en'
+                            ? 'Activate via WhatsApp'
+                            : 'Activer via WhatsApp'}
+                      </span>
+                    </a>
                     <a
                       href="#paid-courses-section"
                       className="px-5 py-2.5 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-xl"
                     >
-                      {lang === 'ar' ? 'عرض الدورات المدفوعة' : lang === 'en' ? 'View Paid Programs' : 'Voir les cours payants'}
+                      {lang === 'ar' ? 'عرض البرامج المكثفة' : lang === 'en' ? 'View Programs' : 'Voir les programmes'}
                     </a>
                     <button
                       type="button"
@@ -930,83 +852,27 @@ export function CourseWorkspace({
         </div>
       </div>
 
-      {/* Paid Specialized Intensive Courses Catalog */}
+      {/* Intensive Courses Catalog (Direct Teacher WhatsApp Activation) */}
       <div id="paid-courses-section" className="pt-6 border-t border-slate-200">
         <div className="mb-8 max-w-3xl">
           <p className="text-xs font-semibold tracking-wide text-amber-800 mb-2 flex items-center gap-1.5">
             <Sparkles className="w-4 h-4" />
             <span>
               {lang === 'ar'
-                ? 'الدورات المكثفة المدفوعة · بإشراف المدربين'
+                ? 'الدورات المكثفة · تفعيل مباشر عبر واتساب المدرب'
                 : lang === 'en'
-                  ? 'Paid Intensive Programs · Led by Our Senior Tutors'
-                  : 'Cours Payants Spécialisés · Programmes Intensifs Encadrés'}
+                  ? 'Intensive Programs · Direct Teacher WhatsApp Activation'
+                  : 'Programmes Intensifs Encadrés · Activation WhatsApp Formateur'}
             </span>
           </p>
           <h3 className="font-display text-2xl sm:text-3xl font-semibold text-slate-900 text-balance">
             {lang === 'ar'
-              ? 'برامج مدفوعة متخصصة لسد الفجوات والتفوق في الامتحان'
+              ? 'اختر دورتك وتواصل عبر واتساب مع المدرب لتفعيل الحساب'
               : lang === 'en'
-                ? 'Enroll in targeted paid masterclasses for your exam track'
-                : 'Rejoignez un cours payant ciblé pour accélérer votre progression'}
+                ? 'Select a masterclass and message your teacher on WhatsApp to activate'
+                : 'Sélectionnez un programme et contactez votre formateur sur WhatsApp pour l’activer'}
           </h3>
         </div>
-
-        {enrollMessage && (
-          <div
-            className={`mb-6 p-4 rounded-xl border text-sm ${
-              enrollMessage.type === 'success'
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
-                : 'bg-red-50 border-red-200 text-red-900'
-            }`}
-          >
-            {enrollMessage.text}
-          </div>
-        )}
-
-        {confirmedBooking && (
-          <div className="mb-8 p-6 rounded-2xl bg-[#0F2537] text-white flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
-            <div className="space-y-1">
-              <div className="text-xs font-semibold uppercase tracking-wider text-sky-300">
-                Formateur assigné &amp; Rapport transmis · {confirmedBooking.trainerName}
-              </div>
-              <div className="font-display text-xl font-bold">
-                {confirmedBooking.subject} · {confirmedBooking.dateSlot} à {confirmedBooking.timeSlot}
-              </div>
-              <p className="text-xs text-slate-300">
-                Votre formateur a reçu votre rapport de paiement et votre créneau. Rejoignez votre salle Google Meet ci-contre.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-3 shrink-0">
-              {confirmedBooking.meetLink ? (
-                <a
-                  href={confirmedBooking.meetLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-5 py-2.5 bg-[#0B6E8C] hover:bg-[#0E83A6] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2"
-                >
-                  <Video className="w-4 h-4" />
-                  <span>Entrer dans Google Meet</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-              ) : (
-                <button
-                  type="button"
-                  disabled={generatingMeetForBooking}
-                  onClick={handleCreateMeetForEnrolledBooking}
-                  className="px-5 py-2.5 bg-[#0B6E8C] hover:bg-[#0E83A6] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2 cursor-pointer"
-                >
-                  <Video className="w-4 h-4" />
-                  <span>
-                    {generatingMeetForBooking
-                      ? 'Création Google Meet...'
-                      : 'Générer & Entrer Google Meet'}
-                  </span>
-                </button>
-              )}
-            </div>
-          </div>
-        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {visiblePaidCourses.map((pc) => (
@@ -1049,28 +915,25 @@ export function CourseWorkspace({
                 {pc.isEnrolled ? (
                   <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-50 text-emerald-800 text-xs font-semibold">
                     <Unlock className="w-3.5 h-3.5" />
-                    {lang === 'ar' ? 'مسجل' : lang === 'en' ? 'Enrolled' : 'Inscrit'}
+                    {lang === 'ar' ? 'مفعّل' : lang === 'en' ? 'Active' : 'Activé'}
                   </span>
                 ) : (
                   <button
                     type="button"
                     onClick={() => {
-                      if (!user || !token) {
-                        onRequireAuth();
-                        return;
-                      }
+                      setCopiedMsg(false);
                       setCheckoutCourse(pc);
                       setChosenTrainerId(pc.trainerId);
                     }}
-                    className="px-4 py-2 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                    className="px-4 py-2 bg-[#16A34A] hover:bg-[#15803D] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 transition-colors cursor-pointer"
                   >
-                    <CreditCard className="w-3.5 h-3.5" />
+                    <MessageCircle className="w-3.5 h-3.5" />
                     <span>
                       {lang === 'ar'
-                        ? 'التسجيل في الدورة'
+                        ? 'تفعيل عبر واتساب'
                         : lang === 'en'
-                          ? 'Enroll Now'
-                          : 'S’inscrire au cours'}
+                          ? 'Activate via WhatsApp'
+                          : 'Activer via WhatsApp'}
                     </span>
                   </button>
                 )}
@@ -1082,77 +945,169 @@ export function CourseWorkspace({
         </div>
       )}
 
-      {/* Paid Course Checkout Modal with Trainer Choice & Google Meet Scheduling */}
-      {checkoutCourse && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4"
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 sm:p-8 shadow-xl relative max-h-[90vh] overflow-y-auto">
-            <button
-              type="button"
-              onClick={() => setCheckoutCourse(null)}
-              aria-label="Fermer"
-              className="absolute top-4 end-4 p-2 text-slate-500 hover:text-slate-900 rounded-lg cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
+      {/* Course WhatsApp Activation Modal (Replaces Online Checkout) */}
+      {checkoutCourse && (() => {
+        const activeInfo = TEACHER_WHATSAPP[chosenTrainerId];
+        const effectiveName = user?.name || guestName.trim();
+        const effectiveEmail = user?.email || guestEmail.trim();
+        const extraDetails = [
+          `1ère séance souhaitée : ${chosenDateSlot} (${chosenTimeSlot})`,
+          courseNotes.trim() ? `Objectifs : ${courseNotes.trim()}` : '',
+        ]
+          .filter(Boolean)
+          .join(' | ');
 
-            <div className="text-xs font-semibold text-amber-800 mb-1">
-              {checkoutCourse.curriculumLabel} · Programme Intensif
-            </div>
-            <h3 className="font-display text-xl font-semibold text-slate-900 mb-4">
-              {checkoutCourse.title}
-            </h3>
+        const waParams = {
+          teacherId: chosenTrainerId,
+          teacherDisplayName: activeInfo.defaultName,
+          itemType: 'course' as const,
+          itemTitle: checkoutCourse.title,
+          curriculum: checkoutCourse.curriculumLabel,
+          priceSar: checkoutCourse.priceSar,
+          studentName: effectiveName || undefined,
+          studentEmail: effectiveEmail || undefined,
+          extraDetails,
+          lang,
+        };
+        const waMessage = buildWhatsAppActivationMessage(waParams);
+        const waUrl = buildWhatsAppActivationUrl(waParams);
 
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 mb-5 flex items-center justify-between">
-              <span className="text-sm text-slate-700">
-                {checkoutCourse.sessionsCount} séances ({checkoutCourse.durationWeeks} semaines)
-              </span>
-              <span className="font-mono text-xl font-semibold text-slate-900 tabular-nums">
-                {checkoutCourse.priceSar} SAR
-              </span>
-            </div>
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 sm:p-8 shadow-xl relative max-h-[90vh] overflow-y-auto space-y-4">
+              <button
+                type="button"
+                onClick={() => setCheckoutCourse(null)}
+                aria-label="Fermer"
+                className="absolute top-4 end-4 p-2 text-slate-500 hover:text-slate-900 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
 
-            <form onSubmit={handleEnrollPaidCourse} className="space-y-4">
-              {/* Step 1: Choose Preferred Trainer */}
+              <div>
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 mb-1">
+                  <MessageCircle className="w-4 h-4" />
+                  <span>
+                    {checkoutCourse.curriculumLabel} ·{' '}
+                    {lang === 'ar'
+                      ? 'تفعيل مباشر عبر واتساب'
+                      : lang === 'en'
+                        ? 'WhatsApp Course Activation'
+                        : 'Activation WhatsApp Formateur'}
+                  </span>
+                </div>
+                <h3 className="font-display text-xl font-semibold text-slate-900">
+                  {checkoutCourse.title}
+                </h3>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                <span className="text-sm text-slate-700">
+                  {checkoutCourse.sessionsCount} séances ({checkoutCourse.durationWeeks} semaines)
+                </span>
+                <span className="font-mono text-xl font-semibold text-slate-900 tabular-nums">
+                  {checkoutCourse.priceSar} SAR
+                </span>
+              </div>
+
+              {/* Step 1: Choose Preferred Teacher WhatsApp */}
               <div>
                 <label className="block text-xs font-semibold text-[#0F2537] mb-1.5">
-                  Choisir votre formateur pour ce programme &amp; Google Meet
+                  {lang === 'ar'
+                    ? 'اختر المدرب للتواصل عبر واتساب وتفعيل الدورة'
+                    : lang === 'en'
+                      ? 'Choose your teacher on WhatsApp'
+                      : 'Choisir votre formateur sur WhatsApp'}
                 </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { id: 'marwan' as const, label: 'Mr. Marwan Mhamdi', sub: 'English · SAT / IB / IGCSE' },
-                    { id: 'mohamed' as const, label: 'M. Mohamed Cherif', sub: 'FR / AR · NAFES / Qudurat / Bac' },
-                  ].map((tr) => (
-                    <button
-                      key={tr.id}
-                      type="button"
-                      onClick={() => setChosenTrainerId(tr.id)}
-                      className={`p-3 rounded-xl border text-start transition-colors cursor-pointer ${
-                        chosenTrainerId === tr.id
-                          ? 'border-[#0B6E8C] bg-[#EEF5F9] text-[#0F2537]'
-                          : 'border-slate-200 text-slate-700 hover:border-slate-400'
-                      }`}
-                    >
-                      <div className="text-xs font-bold">{tr.label}</div>
-                      <div className="text-[11px] text-slate-500 mt-0.5">{tr.sub}</div>
-                    </button>
-                  ))}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {(['marwan', 'mohamed'] as const).map((tid) => {
+                    const info = TEACHER_WHATSAPP[tid];
+                    return (
+                      <button
+                        key={tid}
+                        type="button"
+                        onClick={() => setChosenTrainerId(tid)}
+                        className={`p-3 rounded-xl border text-start transition-colors cursor-pointer ${
+                          chosenTrainerId === tid
+                            ? 'border-emerald-700 bg-emerald-50 text-emerald-950'
+                            : 'border-slate-200 text-slate-700 hover:border-slate-400'
+                        }`}
+                      >
+                        <div className="text-xs font-bold">{info.defaultName}</div>
+                        <div className="font-mono text-[11px] font-semibold text-emerald-800 mt-0.5" dir="ltr">
+                          {info.phoneDisplay}
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-0.5">{info.tracksLabel}</div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
+
+              {/* Student Account Info */}
+              {user ? (
+                <div className="p-3 rounded-xl bg-[#EEF5F9] border border-[#BFD8E6] text-xs text-[#0F2537] flex items-center justify-between gap-2">
+                  <div>
+                    <div className="font-semibold">{user.name}</div>
+                    <div className="text-slate-600">{user.email}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onRefreshPaidCourses()}
+                    className="px-2.5 py-1 bg-white border border-[#0B6E8C] text-[#0B6E8C] rounded-lg text-[11px] font-semibold cursor-pointer"
+                  >
+                    Actualiser
+                  </button>
+                </div>
+              ) : (
+                <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-amber-950">
+                    <span className="font-semibold">
+                      Indiquez votre nom et e-mail (ou connectez-vous) :
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCheckoutCourse(null);
+                        onRequireAuth();
+                      }}
+                      className="text-xs font-bold text-[#0B6E8C] hover:underline cursor-pointer"
+                    >
+                      {t.ctaSignIn}
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      value={guestName}
+                      onChange={(e) => setGuestName(e.target.value)}
+                      placeholder="Nom de l’élève"
+                      className="px-3 py-2 text-xs bg-white border border-amber-300 rounded-lg"
+                    />
+                    <input
+                      type="email"
+                      value={guestEmail}
+                      onChange={(e) => setGuestEmail(e.target.value)}
+                      placeholder="E-mail du compte"
+                      className="px-3 py-2 text-xs bg-white border border-amber-300 rounded-lg"
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Step 2: Preferred Launch Date & Time */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
                     <Calendar className="w-3.5 h-3.5 text-[#0B6E8C]" />
-                    <span>Date 1ère séance</span>
+                    <span>Date souhaitée</span>
                   </label>
                   <input
                     type="date"
-                    required
                     value={chosenDateSlot}
                     onChange={(e) => setChosenDateSlot(e.target.value)}
                     className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
@@ -1178,7 +1133,7 @@ export function CourseWorkspace({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Objectifs / chapitres prioritaires à transmettre au formateur
+                  Objectifs / chapitres prioritaires à transmettre sur WhatsApp
                 </label>
                 <input
                   type="text"
@@ -1189,66 +1144,43 @@ export function CourseWorkspace({
                 />
               </div>
 
-              {/* Step 3: Optional Instant Google Meet Link */}
-              <div className="p-3 rounded-xl bg-[#EEF5F9] border border-[#BFD8E6] flex items-center justify-between gap-3">
-                <div className="text-xs text-[#0F2537]">
-                  <div className="font-semibold flex items-center gap-1.5">
-                    <Video className="w-3.5 h-3.5 text-[#0B6E8C]" />
-                    <span>Google Meet instantané</span>
-                  </div>
-                  <div className="text-[11px] text-slate-600">
-                    {googleAccessToken
-                      ? `Google connecté (${googleEmail || 'Prêt'}) — lien Meet généré dès paiement`
-                      : 'Optionnel : connectez Google pour créer le lien Meet immédiatement'}
-                  </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-semibold text-slate-700">Message WhatsApp</span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyMessage(waMessage)}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#0B6E8C] hover:underline cursor-pointer"
+                  >
+                    {copiedMsg ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedMsg ? 'Copié' : 'Copier'}</span>
+                  </button>
                 </div>
-                {!googleAccessToken && (
-                  <button
-                    type="button"
-                    disabled={connectingGoogle}
-                    onClick={handleConnectGoogleForCourse}
-                    className="px-3 py-1.5 bg-white border border-[#0B6E8C] text-[#0B6E8C] text-[11px] font-semibold rounded-lg shrink-0 cursor-pointer"
-                  >
-                    {connectingGoogle ? '...' : 'Connecter Google'}
-                  </button>
-                )}
+                <pre className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-700 whitespace-pre-wrap font-sans leading-relaxed">
+                  {waMessage}
+                </pre>
               </div>
 
-              {/* Step 4: Payment Method */}
-              <div className="space-y-2">
-                {['Mada · Saudi Payments', 'Visa / Mastercard', 'Apple Pay'].map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setPaymentMethod(m)}
-                    className={`w-full text-start px-4 py-2.5 rounded-lg border text-xs font-medium cursor-pointer ${
-                      paymentMethod === m
-                        ? 'border-emerald-800 bg-emerald-50 text-emerald-950'
-                        : 'border-slate-200 text-slate-700'
-                    }`}
-                  >
-                    {m}
-                  </button>
-                ))}
-              </div>
-
-              <button
-                type="submit"
-                disabled={enrolling}
-                className="w-full py-3 px-4 bg-emerald-800 hover:bg-emerald-900 text-white text-sm font-semibold rounded-xl transition-colors cursor-pointer"
+              <a
+                href={waUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-3.5 px-4 bg-[#16A34A] hover:bg-[#15803D] text-white text-sm font-semibold rounded-xl transition-colors inline-flex items-center justify-center gap-2"
               >
-                {enrolling
-                  ? '...'
-                  : lang === 'ar'
-                    ? 'تأكيد التسجيل والدفع وإرسال التقرير للمدرب'
+                <MessageCircle className="w-4 h-4" />
+                <span>
+                  {lang === 'ar'
+                    ? `تواصل عبر واتساب (${activeInfo.defaultName} · ${activeInfo.phoneE164})`
                     : lang === 'en'
-                      ? 'Confirm Payment & Notify Trainer'
-                      : 'Confirmer le paiement & Envoyer rapport au formateur'}
-              </button>
-            </form>
+                      ? `Open WhatsApp · ${activeInfo.defaultName} (${activeInfo.phoneDisplay})`
+                      : `Activer via WhatsApp · ${activeInfo.defaultName} (${activeInfo.phoneDisplay})`}
+                </span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </section>
   );
 }

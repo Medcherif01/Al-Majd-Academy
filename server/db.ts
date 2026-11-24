@@ -1151,6 +1151,23 @@ export const db = {
     return found;
   },
 
+  async confirmBooking(bookingId: string): Promise<BookingRecord | null> {
+    if (await connectDatabase()) {
+      if (!mongoose.isValidObjectId(bookingId)) return null;
+      const doc = await BookingModel.findByIdAndUpdate(
+        bookingId,
+        { $set: { paid: true, status: 'confirmed' } },
+        { new: true }
+      ).lean();
+      return doc ? mapBookingDoc(doc) : null;
+    }
+    const found = memoryBookings.find((b) => b.id === bookingId);
+    if (!found) return null;
+    found.paid = true;
+    found.status = 'confirmed';
+    return found;
+  },
+
   async saveGeneratedExam(exam: Omit<GeneratedExamRecord, 'id' | 'createdAt'>): Promise<GeneratedExamRecord> {
     if (await connectDatabase()) {
       const doc = await GeneratedExamModel.create(exam);

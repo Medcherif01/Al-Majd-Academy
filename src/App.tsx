@@ -408,6 +408,7 @@ export default function App() {
               lang={lang}
               trainers={trainers}
               papers={papers}
+              paidCourses={paidCourses}
               onLaunchAiExam={launchAiExam}
               onTrainersUpdated={fetchTrainers}
               onPapersUpdated={() => fetchPastPapers(token)}

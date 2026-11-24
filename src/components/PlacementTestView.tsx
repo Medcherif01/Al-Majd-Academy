@@ -843,10 +843,10 @@ export function PlacementTestView({
                 <div>
                   <div className="text-xs font-semibold text-amber-900 mb-1.5">
                     {result.language === 'العربية'
-                      ? 'التدريب الخاص المباشر (Google Meet) والدورات المدفوعة'
+                      ? 'التفعيل المباشر عبر واتساب والتدريب الخاص (Google Meet)'
                       : result.language === 'English'
-                        ? 'Paid Intensive Courses & Google Meet Private Tutoring'
-                        : 'Formation Payante & Coaching Privé Google Meet'}
+                        ? 'Intensive Courses & Private Coaching · Direct WhatsApp Activation'
+                        : 'Programmes Intensifs & Coaching Privé · Activation WhatsApp'}
                   </div>
                   <h4 className="font-display text-xl font-semibold text-slate-900 mb-2">
                     {recommendedPaidCourse
@@ -857,10 +857,10 @@ export function PlacementTestView({
                   </h4>
                   <p className="text-sm text-slate-700 leading-relaxed">
                     {lang === 'ar'
-                      ? 'اختر التاريخ والوقت والمدة، وسيتم إرسال نقاط ضعفك مع رابط Google Meet فوري بعد الدفع.'
+                      ? 'اختر الدورة أو الموعد المناسب وتواصل مباشرة مع مدربك عبر واتساب لتفعيل الحساب وإطلاق الحصص.'
                       : lang === 'en'
-                        ? 'Pick your calendar date, time & duration; your weaknesses are sent to the teacher with an instant Google Meet link after payment.'
-                        : 'Choisissez la date, l’horaire et la durée : vos points faibles et thèmes sont transmis au formateur avec un lien Google Meet généré après paiement.'}
+                        ? 'Select your course or preferred schedule and connect directly with your teacher on WhatsApp to activate your access.'
+                        : 'Sélectionnez votre cours ou votre créneau et contactez directement votre formateur sur WhatsApp pour activer votre accès.'}
                   </p>
                 </div>
 
@@ -869,13 +869,13 @@ export function PlacementTestView({
                     <button
                       type="button"
                       onClick={() => onGoToPaidCourse(recommendedPaidCourse.id)}
-                      className="px-4 py-2.5 bg-slate-900 hover:bg-emerald-900 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+                      className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer"
                     >
                       {result.language === 'العربية'
-                        ? `التسجيل في الدورة (${recommendedPaidCourse.priceSar} ر.س)`
+                        ? `تفعيل الدورة عبر واتساب (${recommendedPaidCourse.priceSar} ر.س)`
                         : result.language === 'English'
-                          ? `Enroll in Course (${recommendedPaidCourse.priceSar} SAR)`
-                          : `Rejoindre le cours payant (${recommendedPaidCourse.priceSar} SAR)`}
+                          ? `Activate via WhatsApp (${recommendedPaidCourse.priceSar} SAR)`
+                          : `Activer via WhatsApp (${recommendedPaidCourse.priceSar} SAR)`}
                     </button>
                   )}
 
@@ -887,8 +887,8 @@ export function PlacementTestView({
                     <UserCheck className="w-3.5 h-3.5" />
                     <span>
                       {result.recommendedTrainerId === 'marwan'
-                        ? 'Réserver Marwan (Google Meet)'
-                        : 'Réserver Mohamed Cherif (Google Meet)'}
+                        ? 'Contacter Marwan (WhatsApp & Meet)'
+                        : 'Contacter Mohamed Cherif (WhatsApp & Meet)'}
                     </span>
                   </button>
                 </div>
