@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Award,
+  Bell,
   BookOpenCheck,
   Briefcase,
   Calendar,
@@ -19,6 +20,7 @@ import {
   GraduationCap,
   KeyRound,
   Layers,
+  Link2,
   Lock,
   LogOut,
   MessageCircle,
@@ -40,6 +42,11 @@ import {
 } from 'lucide-react';
 import { apiRequest } from '../utils/api';
 import { ExamBoardCrestSvg, getExamBoardTheme } from '../utils/examBoardThemes';
+import {
+  getCachedGoogleAccessToken,
+  initGoogleWorkspaceAuth,
+  signInWithGoogleForMeet,
+} from '../utils/googleMeetAuth';
 import { MathText } from '../utils/mathFormat';
 import { ExamPrepHubs } from './ExamPrepHubs';
 import { InteractiveWhiteboard } from './InteractiveWhiteboard';
@@ -47,6 +54,7 @@ import type {
   BookingItem,
   DemoReport,
   FullPastPaper,
+  JoiningRequestItem,
   PaidCourseItem,
   PastPaperSummary,
   PrepHubTab,
@@ -188,6 +196,19 @@ export function TeacherPortal({
   const [demoReports, setDemoReports] = useState<DemoReport[]>([]);
   const [pendingDemoReportsCount, setPendingDemoReportsCount] = useState(0);
   const [bookings, setBookings] = useState<BookingItem[]>([]);
+  const [joiningRequests, setJoiningRequests] = useState<JoiningRequestItem[]>([]);
+  const [pendingJoiningRequestsCount, setPendingJoiningRequestsCount] = useState(0);
+  const [joiningRequestsFilter, setJoiningRequestsFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [reviewingRequestId, setReviewingRequestId] = useState<string | null>(null);
+
+  // Teacher Google Workspace OAuth & Meet Link Sharing
+  const [googleEmail, setGoogleEmail] = useState<string | null>(null);
+  const [googleToken, setGoogleToken] = useState<string | null>(() => getCachedGoogleAccessToken());
+  const [googleConnecting, setGoogleConnecting] = useState(false);
+  const [meetBusyId, setMeetBusyId] = useState<string | null>(null);
+  const [manualMeetDrafts, setManualMeetDrafts] = useState<Record<string, string>>({});
+  const [savingMeetId, setSavingMeetId] = useState<string | null>(null);
+  const [meetFeedback, setMeetFeedback] = useState('');
 
   // Registered Student Accounts (Paid vs Unpaid)
   const [accounts, setAccounts] = useState<RegisteredStudentSummary[]>([]);
@@ -402,8 +423,8 @@ export function TeacherPortal({
   };
 
   const fetchOverview = useCallback(
-    async (tid: 'marwan' | 'mohamed', activeAuthToken: string) => {
-      setLoading(true);
+    async (tid: 'marwan' | 'mohamed', activeAuthToken: string, silent = false) => {
+      if (!silent) setLoading(true);
       try {
         const res = await apiRequest<{
           students: RosterStudent[];
@@ -411,8 +432,10 @@ export function TeacherPortal({
           writings: WritingSubmission[];
           demoReports?: DemoReport[];
           bookings?: BookingItem[];
+          joiningRequests?: JoiningRequestItem[];
           pendingWritingCount: number;
           pendingDemoReportsCount?: number;
+          pendingJoiningRequestsCount?: number;
         }>(`/api/teacher/overview?teacherId=${tid}`, { token: activeAuthToken });
         setStudents(res.students);
         setMissions(res.missions);
@@ -426,21 +449,29 @@ export function TeacherPortal({
         );
         setBookings(res.bookings || []);
 
-        if (reports.length > 0) {
-          const firstNew = reports.find((r) => r.status === 'new') || reports[0];
-          loadReportIntoEditor(firstNew);
-        } else {
-          setSelectedReportId(null);
-        }
+        const reqs = res.joiningRequests || [];
+        setJoiningRequests(reqs);
+        setPendingJoiningRequestsCount(
+          res.pendingJoiningRequestsCount ?? reqs.filter((r) => r.status === 'pending').length
+        );
 
-        if (res.writings.length > 0) {
-          const firstPending =
-            res.writings.find((w) => w.status === 'pending') || res.writings[0];
-          setSelectedWritingId(firstPending.id);
-          setReviewScore(firstPending.score ?? 85);
-          setReviewFeedback(firstPending.teacherFeedback || '');
-        } else {
-          setSelectedWritingId(null);
+        if (!silent) {
+          if (reports.length > 0) {
+            const firstNew = reports.find((r) => r.status === 'new') || reports[0];
+            loadReportIntoEditor(firstNew);
+          } else {
+            setSelectedReportId(null);
+          }
+
+          if (res.writings.length > 0) {
+            const firstPending =
+              res.writings.find((w) => w.status === 'pending') || res.writings[0];
+            setSelectedWritingId(firstPending.id);
+            setReviewScore(firstPending.score ?? 85);
+            setReviewFeedback(firstPending.teacherFeedback || '');
+          } else {
+            setSelectedWritingId(null);
+          }
         }
       } catch (err: any) {
         if (String(err?.message || '').includes('Session formateur') || String(err?.message || '').includes('Accès formateur')) {
@@ -448,7 +479,7 @@ export function TeacherPortal({
         }
         console.error('Failed to fetch teacher overview:', err);
       } finally {
-        setLoading(false);
+        if (!silent) setLoading(false);
       }
     },
     []
@@ -470,6 +501,20 @@ export function TeacherPortal({
   }, []);
 
   useEffect(() => {
+    const unsub = initGoogleWorkspaceAuth(
+      (gUser, gTok) => {
+        setGoogleEmail(gUser.email || gUser.displayName || 'Google Connecté');
+        setGoogleToken(gTok);
+      },
+      () => {
+        setGoogleEmail(null);
+        setGoogleToken(null);
+      }
+    );
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
     if (!teacherToken) return;
     fetchOverview(teacherId, teacherToken);
     fetchAccounts(teacherToken);
@@ -479,6 +524,11 @@ export function TeacherPortal({
     ]);
     setPaperLanguage(teacherId === 'mohamed' ? 'Français' : 'English');
     setPaperCategory(teacherId === 'mohamed' ? 'NAFES (ETEC)' : 'IB Diploma');
+
+    const pollId = setInterval(() => {
+      void fetchOverview(teacherId, teacherToken, true);
+    }, 15000);
+    return () => clearInterval(pollId);
   }, [teacherId, teacherToken, fetchOverview, fetchAccounts]);
 
   useEffect(() => {
@@ -609,6 +659,200 @@ export function TeacherPortal({
       showToast(err?.message || 'Impossible de confirmer la séance.');
     } finally {
       setConfirmingBookingId(null);
+    }
+  };
+
+  const handleConnectGoogle = async () => {
+    setMeetFeedback('');
+    setGoogleConnecting(true);
+    try {
+      const authResult = await signInWithGoogleForMeet();
+      if (authResult) {
+        setGoogleEmail(authResult.user.email || authResult.user.displayName || 'Google Connecté');
+        setGoogleToken(authResult.accessToken);
+        showToast('Compte Google Workspace connecté pour créer et partager des salles Google Meet.');
+      }
+    } catch (err: any) {
+      setMeetFeedback(err?.message || 'Connexion Google annulée.');
+    } finally {
+      setGoogleConnecting(false);
+    }
+  };
+
+  const ensureTeacherGoogleToken = async (): Promise<string> => {
+    let activeGoogleToken = googleToken || getCachedGoogleAccessToken();
+    if (!activeGoogleToken) {
+      const authResult = await signInWithGoogleForMeet();
+      if (authResult) {
+        activeGoogleToken = authResult.accessToken;
+        setGoogleToken(authResult.accessToken);
+        setGoogleEmail(authResult.user.email || authResult.user.displayName || 'Google Connecté');
+      }
+    }
+    if (!activeGoogleToken) {
+      throw new Error('Connexion Google Workspace requise pour générer automatiquement le lien Meet.');
+    }
+    return activeGoogleToken;
+  };
+
+  const handleTeacherGenerateBookingMeet = async (bookingId: string) => {
+    if (!teacherToken) return;
+    setMeetFeedback('');
+    setMeetBusyId(`booking:${bookingId}`);
+    try {
+      const activeGoogleToken = await ensureTeacherGoogleToken();
+      const res = await apiRequest<{ booking: BookingItem; warning?: string }>(
+        `/api/teacher/bookings/${encodeURIComponent(bookingId)}/generate-meet`,
+        {
+          method: 'POST',
+          token: teacherToken,
+          headers: { 'x-google-access-token': activeGoogleToken },
+          body: { googleAccessToken: activeGoogleToken },
+        }
+      );
+      setBookings((prev) => prev.map((b) => (b.id === res.booking.id ? res.booking : b)));
+      if (res.warning) {
+        setMeetFeedback(res.warning);
+      } else {
+        showToast('Lien Google Meet généré et partagé sur le portail de l’élève.');
+      }
+    } catch (err: any) {
+      setMeetFeedback(err?.message || 'Impossible de générer le lien Google Meet.');
+    } finally {
+      setMeetBusyId(null);
+    }
+  };
+
+  const handleTeacherSaveBookingMeetLink = async (bookingId: string) => {
+    const key = `booking:${bookingId}`;
+    const raw = (manualMeetDrafts[key] || '').trim();
+    if (!teacherToken || !raw) return;
+    setMeetFeedback('');
+    setSavingMeetId(key);
+    try {
+      const res = await apiRequest<{ booking: BookingItem }>(
+        `/api/teacher/bookings/${encodeURIComponent(bookingId)}/meet-link`,
+        {
+          method: 'PATCH',
+          token: teacherToken,
+          body: { meetLink: raw },
+        }
+      );
+      setBookings((prev) => prev.map((b) => (b.id === res.booking.id ? res.booking : b)));
+      setManualMeetDrafts((prev) => ({ ...prev, [key]: '' }));
+      showToast('Lien Google Meet enregistré et partagé avec l’élève.');
+    } catch (err: any) {
+      setMeetFeedback(err?.message || 'Lien Google Meet invalide.');
+    } finally {
+      setSavingMeetId(null);
+    }
+  };
+
+  const handleConfirmJoiningRequest = async (requestId: string) => {
+    if (!teacherToken) return;
+    setReviewingRequestId(requestId);
+    try {
+      const res = await apiRequest<{
+        request: JoiningRequestItem;
+        grantedImmediately: boolean;
+      }>(`/api/teacher/joining-requests/${encodeURIComponent(requestId)}/confirm`, {
+        method: 'POST',
+        token: teacherToken,
+      });
+      setJoiningRequests((prev) => {
+        const updated = prev.map((r) => (r.id === res.request.id ? res.request : r));
+        setPendingJoiningRequestsCount(updated.filter((r) => r.status === 'pending').length);
+        return updated;
+      });
+      await fetchAccounts(teacherToken);
+      await onPapersUpdated?.();
+      showToast(
+        res.grantedImmediately
+          ? `Demande confirmée : accès activé immédiatement pour ${res.request.studentName}.`
+          : `Demande confirmée : l’accès de ${res.request.studentName} s’activera dès son inscription.`
+      );
+    } catch (err: any) {
+      showToast(err?.message || 'Impossible de confirmer la demande.');
+    } finally {
+      setReviewingRequestId(null);
+    }
+  };
+
+  const handleRejectJoiningRequest = async (requestId: string) => {
+    if (!teacherToken) return;
+    setReviewingRequestId(requestId);
+    try {
+      const res = await apiRequest<{ request: JoiningRequestItem }>(
+        `/api/teacher/joining-requests/${encodeURIComponent(requestId)}/reject`,
+        { method: 'POST', token: teacherToken }
+      );
+      setJoiningRequests((prev) => {
+        const updated = prev.map((r) => (r.id === res.request.id ? res.request : r));
+        setPendingJoiningRequestsCount(updated.filter((r) => r.status === 'pending').length);
+        return updated;
+      });
+      showToast('Demande refusée.');
+    } catch (err: any) {
+      showToast(err?.message || 'Impossible de refuser la demande.');
+    } finally {
+      setReviewingRequestId(null);
+    }
+  };
+
+  const handleTeacherGenerateRequestMeet = async (requestId: string) => {
+    if (!teacherToken) return;
+    setMeetFeedback('');
+    setMeetBusyId(`req:${requestId}`);
+    try {
+      const activeGoogleToken = await ensureTeacherGoogleToken();
+      const res = await apiRequest<{ request: JoiningRequestItem; warning?: string }>(
+        `/api/teacher/joining-requests/${encodeURIComponent(requestId)}/generate-meet`,
+        {
+          method: 'POST',
+          token: teacherToken,
+          headers: { 'x-google-access-token': activeGoogleToken },
+          body: { googleAccessToken: activeGoogleToken },
+        }
+      );
+      setJoiningRequests((prev) =>
+        prev.map((r) => (r.id === res.request.id ? res.request : r))
+      );
+      if (res.warning) {
+        setMeetFeedback(res.warning);
+      } else {
+        showToast('Lien Google Meet généré et partagé pour ce cours.');
+      }
+    } catch (err: any) {
+      setMeetFeedback(err?.message || 'Impossible de générer le lien Google Meet.');
+    } finally {
+      setMeetBusyId(null);
+    }
+  };
+
+  const handleTeacherSaveRequestMeetLink = async (requestId: string) => {
+    const key = `req:${requestId}`;
+    const raw = (manualMeetDrafts[key] || '').trim();
+    if (!teacherToken || !raw) return;
+    setMeetFeedback('');
+    setSavingMeetId(key);
+    try {
+      const res = await apiRequest<{ request: JoiningRequestItem }>(
+        `/api/teacher/joining-requests/${encodeURIComponent(requestId)}/meet-link`,
+        {
+          method: 'PATCH',
+          token: teacherToken,
+          body: { meetLink: raw },
+        }
+      );
+      setJoiningRequests((prev) =>
+        prev.map((r) => (r.id === res.request.id ? res.request : r))
+      );
+      setManualMeetDrafts((prev) => ({ ...prev, [key]: '' }));
+      showToast('Lien Google Meet partagé avec l’élève pour ce cours.');
+    } catch (err: any) {
+      setMeetFeedback(err?.message || 'Lien Google Meet invalide.');
+    } finally {
+      setSavingMeetId(null);
     }
   };
 
@@ -962,6 +1206,7 @@ export function TeacherPortal({
 
   const row1Tabs: { id: TeacherSubTab; label: string; badge?: number }[] = [
     { id: 'dashboard', label: 'Dashboard' },
+    { id: 'joining-requests', label: 'Demandes & Notifications', badge: pendingJoiningRequestsCount },
     { id: 'accounts', label: 'Comptes Élèves & Activations', badge: unpaidAccountsCount },
     { id: 'demo-reports', label: 'Demo test reports', badge: pendingDemoReportsCount },
     { id: 'tutoring-bookings', label: 'Demandes WhatsApp & Meet', badge: bookings.length },
@@ -1289,7 +1534,9 @@ export function TeacherPortal({
                 {typeof tab.badge === 'number' && tab.badge > 0 && (
                   <span
                     className={`px-1.5 py-0.5 rounded-md font-mono text-[10px] font-bold leading-none tabular-nums ${
-                      tab.id === 'demo-reports' ? 'bg-[#D93829] text-white' : 'bg-[#0B6E8C] text-white'
+                      tab.id === 'demo-reports' || tab.id === 'joining-requests'
+                        ? 'bg-[#D93829] text-white'
+                        : 'bg-[#0B6E8C] text-white'
                     }`}
                   >
                     {tab.badge}
@@ -1324,6 +1571,49 @@ export function TeacherPortal({
           })}
         </div>
       </div>
+
+      {/* Live Teacher Notification Banner for Pending Joining Requests & WhatsApp Bookings */}
+      {(pendingJoiningRequestsCount > 0 || bookings.some((b) => !b.paid)) && (
+        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-2.5 text-xs text-amber-950">
+            <Bell className="w-4 h-4 text-[#D93829] shrink-0 mt-0.5" />
+            <div>
+              <strong>Notifications formateur :</strong>{' '}
+              {pendingJoiningRequestsCount > 0 && (
+                <span>
+                  {pendingJoiningRequestsCount} demande(s) d’accès cours/Past Papers en attente de confirmation
+                  {bookings.some((b) => !b.paid) ? ' · ' : '.'}
+                </span>
+              )}
+              {bookings.some((b) => !b.paid) && (
+                <span>
+                  {bookings.filter((b) => !b.paid).length} demande(s) de séance privée WhatsApp à activer.
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {pendingJoiningRequestsCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('joining-requests')}
+                className="px-3 py-1.5 bg-[#D93829] hover:bg-red-700 text-white text-xs font-semibold rounded-lg cursor-pointer"
+              >
+                Confirmer les demandes ({pendingJoiningRequestsCount})
+              </button>
+            )}
+            {bookings.some((b) => !b.paid) && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('tutoring-bookings')}
+                className="px-3 py-1.5 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-lg cursor-pointer"
+              >
+                Séances WhatsApp ({bookings.filter((b) => !b.paid).length})
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {toast && (
         <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-900 flex items-center gap-2">
@@ -2329,6 +2619,259 @@ export function TeacherPortal({
         </div>
       )}
 
+      {/* TAB: JOINING REQUESTS & NOTIFICATIONS */}
+      {activeTab === 'joining-requests' && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-7 shadow-xs space-y-5">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+            <div>
+              <h2 className="font-display text-xl font-bold text-[#0F2537] flex items-center gap-2">
+                <Bell className="w-5 h-5 text-[#0B6E8C]" />
+                <span>Demandes d’Inscription &amp; Notifications ({joiningRequests.length})</span>
+              </h2>
+              <p className="text-xs text-slate-600 mt-0.5">
+                Confirmez la demande de l’élève après échange WhatsApp pour débloquer immédiatement son cours ou Past Paper, et générez/partagez son lien Google Meet.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={googleConnecting}
+                onClick={handleConnectGoogle}
+                className={`px-3 py-2 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer ${
+                  googleEmail
+                    ? 'bg-emerald-50 border border-emerald-300 text-emerald-900'
+                    : 'bg-[#0F2537] hover:bg-[#0B6E8C] text-white'
+                }`}
+              >
+                <Video className="w-3.5 h-3.5" />
+                <span>
+                  {googleConnecting
+                    ? 'Connexion Google...'
+                    : googleEmail
+                      ? `Google : ${googleEmail}`
+                      : 'Connecter Google Meet'}
+                </span>
+              </button>
+              {(['all', 'pending', 'approved', 'rejected'] as const).map((flt) => (
+                <button
+                  key={flt}
+                  type="button"
+                  onClick={() => setJoiningRequestsFilter(flt)}
+                  className={`px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer ${
+                    joiningRequestsFilter === flt
+                      ? 'bg-[#0B6E8C] text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  {flt === 'all'
+                    ? 'Toutes'
+                    : flt === 'pending'
+                      ? `En attente (${pendingJoiningRequestsCount})`
+                      : flt === 'approved'
+                        ? 'Confirmées'
+                        : 'Refusées'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {meetFeedback && (
+            <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-950">
+              {meetFeedback}
+            </div>
+          )}
+
+          {joiningRequests.filter((r) => joiningRequestsFilter === 'all' || r.status === joiningRequestsFilter).length === 0 ? (
+            <p className="text-sm text-slate-600 py-6">
+              Aucune demande d’inscription dans cette catégorie pour ce formateur.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {joiningRequests
+                .filter((r) => joiningRequestsFilter === 'all' || r.status === joiningRequestsFilter)
+                .map((reqItem) => {
+                  const key = `req:${reqItem.id}`;
+                  const itemTypeLabel =
+                    reqItem.itemType === 'course'
+                      ? 'Cours Intensif'
+                      : reqItem.itemType === 'all_access'
+                        ? 'Pass Annuel'
+                        : 'Past Paper';
+
+                  return (
+                    <div
+                      key={reqItem.id}
+                      className="p-5 rounded-2xl border border-slate-200 bg-[#F8FAFC] space-y-3"
+                    >
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-[#0B6E8C] mb-0.5">
+                            <span className="px-2 py-0.5 rounded bg-white border border-[#BFD8E6] text-[#0F2537]">
+                              {itemTypeLabel}
+                            </span>
+                            <span>{reqItem.curriculum}</span>
+                            <span>·</span>
+                            <span>{reqItem.language}</span>
+                            {reqItem.itemCode && (
+                              <>
+                                <span>·</span>
+                                <span className="font-mono">{reqItem.itemCode}</span>
+                              </>
+                            )}
+                          </div>
+                          <h3 className="font-display text-lg font-bold text-[#0F2537]">
+                            {reqItem.itemTitle}
+                          </h3>
+                          <div className="text-xs text-slate-600 mt-0.5">
+                            Élève : <strong className="text-[#0F2537]">{reqItem.studentName}</strong> ({reqItem.studentEmail})
+                            {reqItem.preferredSlot ? ` · Créneau souhaité : ${reqItem.preferredSlot}` : ''}
+                          </div>
+                          {reqItem.notes && (
+                            <div className="text-xs text-slate-600 mt-1">
+                              <strong>Objectifs :</strong> {reqItem.notes}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 text-xs font-mono tabular-nums shrink-0">
+                          <span className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 font-semibold text-[#0F2537]">
+                            {reqItem.referenceCode} · {reqItem.priceSar} SAR
+                          </span>
+                          <span
+                            className={`px-2.5 py-1 rounded-lg font-semibold ${
+                              reqItem.status === 'approved'
+                                ? 'bg-emerald-100 text-emerald-900'
+                                : reqItem.status === 'rejected'
+                                  ? 'bg-red-100 text-red-900'
+                                  : 'bg-amber-100 text-amber-900'
+                            }`}
+                          >
+                            {reqItem.status === 'approved'
+                              ? 'Confirmée'
+                              : reqItem.status === 'rejected'
+                                ? 'Refusée'
+                                : 'En attente'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {reqItem.status === 'pending' && (
+                        <div className="pt-3 border-t border-slate-200/80 flex flex-wrap items-center gap-3">
+                          <button
+                            type="button"
+                            disabled={reviewingRequestId === reqItem.id}
+                            onClick={() => handleConfirmJoiningRequest(reqItem.id)}
+                            className="px-4 py-2 bg-[#16A34A] hover:bg-[#15803D] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>
+                              {reviewingRequestId === reqItem.id
+                                ? 'Activation...'
+                                : 'Confirmer & Activer l’accès'}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            disabled={reviewingRequestId === reqItem.id}
+                            onClick={() => handleRejectJoiningRequest(reqItem.id)}
+                            className="px-4 py-2 bg-white border border-red-200 hover:bg-red-50 text-red-700 text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                            <span>Refuser</span>
+                          </button>
+                        </div>
+                      )}
+
+                      {reqItem.status === 'approved' && reqItem.itemType === 'course' && (
+                        <div className="pt-3 border-t border-slate-200/80 space-y-2.5">
+                          {reqItem.meetLink ? (
+                            <div className="flex flex-wrap items-center gap-3">
+                              <a
+                                href={reqItem.meetLink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-4 py-2 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2"
+                              >
+                                <Video className="w-3.5 h-3.5" />
+                                <span>Rejoindre Google Meet (Cours)</span>
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                              <span className="font-mono text-xs text-slate-700 select-all">
+                                {reqItem.meetLink}
+                              </span>
+                              {reqItem.calendarEventLink && (
+                                <a
+                                  href={reqItem.calendarEventLink}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="px-3 py-2 bg-white border border-slate-300 text-slate-700 text-xs font-semibold rounded-xl inline-flex items-center gap-1.5"
+                                >
+                                  <Calendar className="w-3.5 h-3.5" />
+                                  <span>Agenda</span>
+                                </a>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                  type="button"
+                                  disabled={meetBusyId === key}
+                                  onClick={() => handleTeacherGenerateRequestMeet(reqItem.id)}
+                                  className="px-3.5 py-2 bg-[#0F2537] hover:bg-[#0B6E8C] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                >
+                                  <Video className="w-3.5 h-3.5" />
+                                  <span>
+                                    {meetBusyId === key
+                                      ? 'Génération Google Meet...'
+                                      : 'Générer Google Meet pour l’élève'}
+                                  </span>
+                                </button>
+                                <a
+                                  href="https://meet.google.com/new"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="px-3.5 py-2 bg-white border border-slate-300 hover:border-[#0B6E8C] text-[#0F2537] text-xs font-semibold rounded-xl inline-flex items-center gap-1.5"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                  <span>Créer sur Google Meet</span>
+                                </a>
+                              </div>
+                              <div className="flex flex-col sm:flex-row gap-2">
+                                <input
+                                  type="url"
+                                  value={manualMeetDrafts[key] || ''}
+                                  onChange={(e) =>
+                                    setManualMeetDrafts((prev) => ({
+                                      ...prev,
+                                      [key]: e.target.value,
+                                    }))
+                                  }
+                                  placeholder="Collez le lien https://meet.google.com/xxx-xxxx-xxx à partager sur le portail élève..."
+                                  className="flex-1 px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={savingMeetId === key || !(manualMeetDrafts[key] || '').trim()}
+                                  onClick={() => handleTeacherSaveRequestMeetLink(reqItem.id)}
+                                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                >
+                                  <Link2 className="w-3.5 h-3.5" />
+                                  <span>{savingMeetId === key ? 'Partage...' : 'Partager avec l’élève'}</span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* TAB: PRIVATE MEET BOOKING REPORTS */}
       {activeTab === 'tutoring-bookings' && (
         <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-7 shadow-xs space-y-5">
@@ -2338,10 +2881,35 @@ export function TeacherPortal({
                 Paid Private Tutoring Reports &amp; Google Meet Links ({bookings.length})
               </h2>
               <p className="text-xs text-slate-600 mt-0.5">
-                Every paid booking transmits the student’s chosen date, time, training duration, attached weaknesses, requested lessons, and instant Google Meet link.
+                Confirmez les demandes WhatsApp, générez le lien Google Meet côté formateur et partagez-le directement sur le portail de l’élève.
               </p>
             </div>
+            <button
+              type="button"
+              disabled={googleConnecting}
+              onClick={handleConnectGoogle}
+              className={`px-3.5 py-2 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer ${
+                googleEmail
+                  ? 'bg-emerald-50 border border-emerald-300 text-emerald-900'
+                  : 'bg-[#0F2537] hover:bg-[#0B6E8C] text-white'
+              }`}
+            >
+              <Video className="w-3.5 h-3.5" />
+              <span>
+                {googleConnecting
+                  ? 'Connexion Google...'
+                  : googleEmail
+                    ? `Google connecté : ${googleEmail}`
+                    : 'Connecter Google Workspace'}
+              </span>
+            </button>
           </div>
+
+          {meetFeedback && (
+            <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-950">
+              {meetFeedback}
+            </div>
+          )}
 
           {bookings.length === 0 ? (
             <p className="text-sm text-slate-600 py-6">
@@ -2349,7 +2917,9 @@ export function TeacherPortal({
             </p>
           ) : (
             <div className="space-y-4">
-              {bookings.map((b) => (
+              {bookings.map((b) => {
+                const bookingMeetKey = `booking:${b.id}`;
+                return (
                 <div
                   key={b.id}
                   className="p-5 rounded-2xl border border-slate-200 bg-[#F8FAFC] space-y-3"
@@ -2410,73 +2980,163 @@ export function TeacherPortal({
                     </div>
                   </div>
 
-                  <div className="pt-3 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-3">
+                  <div className="pt-3 border-t border-slate-200/80 space-y-3">
                     {b.meetLink ? (
-                      <div className="flex flex-wrap items-center gap-3">
-                        <a
-                          href={b.meetLink}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-4 py-2 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2"
-                        >
-                          <Video className="w-3.5 h-3.5" />
-                          <span>Rejoindre Google Meet</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                        <span className="font-mono text-xs text-slate-600 select-all">{b.meetLink}</span>
-                        {b.calendarEventLink && (
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex flex-wrap items-center gap-3">
                           <a
-                            href={b.calendarEventLink}
+                            href={b.meetLink}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="px-3 py-2 bg-white border border-slate-300 text-slate-700 text-xs font-semibold rounded-xl inline-flex items-center gap-1.5"
+                            className="px-4 py-2 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2"
                           >
-                            <Calendar className="w-3.5 h-3.5" />
-                            <span>Agenda</span>
+                            <Video className="w-3.5 h-3.5" />
+                            <span>Rejoindre Google Meet</span>
+                            <ExternalLink className="w-3 h-3" />
                           </a>
-                        )}
-                      </div>
-                    ) : !b.paid ? (
-                      <div className="flex flex-wrap items-center gap-3">
-                        <span className="text-xs text-amber-800">
-                          Demande envoyée via WhatsApp — cliquez pour confirmer l’activation.
-                        </span>
+                          <span className="font-mono text-xs text-slate-600 select-all">{b.meetLink}</span>
+                          {b.calendarEventLink && (
+                            <a
+                              href={b.calendarEventLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-3 py-2 bg-white border border-slate-300 text-slate-700 text-xs font-semibold rounded-xl inline-flex items-center gap-1.5"
+                            >
+                              <Calendar className="w-3.5 h-3.5" />
+                              <span>Agenda</span>
+                            </a>
+                          )}
+                        </div>
                         <button
                           type="button"
-                          disabled={confirmingBookingId === b.id}
-                          onClick={() => handleConfirmPendingBooking(b.id)}
-                          className="px-3.5 py-2 bg-[#16A34A] hover:bg-[#15803D] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          onClick={() => {
+                            setWhiteboardSession({
+                              studentName: b.studentName,
+                              subject: `${b.curriculum} · ${b.subject}`,
+                              meetLink: b.meetLink || '',
+                            });
+                            setActiveTab('whiteboard');
+                          }}
+                          className="px-3.5 py-2 bg-[#0F2537] hover:bg-slate-800 text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 cursor-pointer"
                         >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>
-                            {confirmingBookingId === b.id ? 'Activation...' : 'Activer la séance'}
+                          <PenTool className="w-3.5 h-3.5" />
+                          <span>Ouvrir Tableau Interactif</span>
+                        </button>
+                      </div>
+                    ) : !b.paid ? (
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className="text-xs text-amber-800">
+                            Demande envoyée via WhatsApp — cliquez pour confirmer l’activation.
                           </span>
+                          <button
+                            type="button"
+                            disabled={confirmingBookingId === b.id}
+                            onClick={() => handleConfirmPendingBooking(b.id)}
+                            className="px-3.5 py-2 bg-[#16A34A] hover:bg-[#15803D] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>
+                              {confirmingBookingId === b.id ? 'Activation...' : 'Activer la séance'}
+                            </span>
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWhiteboardSession({
+                              studentName: b.studentName,
+                              subject: `${b.curriculum} · ${b.subject}`,
+                              meetLink: '',
+                            });
+                            setActiveTab('whiteboard');
+                          }}
+                          className="px-3.5 py-2 bg-[#0F2537] hover:bg-slate-800 text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <PenTool className="w-3.5 h-3.5" />
+                          <span>Ouvrir Tableau Interactif</span>
                         </button>
                       </div>
                     ) : (
-                      <span className="text-xs text-emerald-800">
-                        Séance activée — prêt pour lancement Meet / Tableau.
-                      </span>
-                    )}
+                      <div className="space-y-2.5">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              disabled={meetBusyId === bookingMeetKey}
+                              onClick={() => handleTeacherGenerateBookingMeet(b.id)}
+                              className="px-3.5 py-2 bg-[#0F2537] hover:bg-[#0B6E8C] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                            >
+                              <Video className="w-3.5 h-3.5" />
+                              <span>
+                                {meetBusyId === bookingMeetKey
+                                  ? 'Création Google Meet...'
+                                  : 'Générer Google Meet'}
+                              </span>
+                            </button>
+                            <a
+                              href="https://meet.google.com/new"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-3.5 py-2 bg-white border border-slate-300 hover:border-[#0B6E8C] text-[#0F2537] text-xs font-semibold rounded-xl inline-flex items-center gap-1.5"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              <span>Créer sur Google Meet</span>
+                            </a>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setWhiteboardSession({
+                                studentName: b.studentName,
+                                subject: `${b.curriculum} · ${b.subject}`,
+                                meetLink: '',
+                              });
+                              setActiveTab('whiteboard');
+                            }}
+                            className="px-3.5 py-2 bg-[#0F2537] hover:bg-slate-800 text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <PenTool className="w-3.5 h-3.5" />
+                            <span>Ouvrir Tableau Interactif</span>
+                          </button>
+                        </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setWhiteboardSession({
-                          studentName: b.studentName,
-                          subject: `${b.curriculum} · ${b.subject}`,
-                          meetLink: b.meetLink || '',
-                        });
-                        setActiveTab('whiteboard');
-                      }}
-                      className="px-3.5 py-2 bg-[#0F2537] hover:bg-slate-800 text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <PenTool className="w-3.5 h-3.5" />
-                      <span>Ouvrir Tableau Interactif</span>
-                    </button>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <input
+                            type="url"
+                            value={manualMeetDrafts[bookingMeetKey] || ''}
+                            onChange={(e) =>
+                              setManualMeetDrafts((prev) => ({
+                                ...prev,
+                                [bookingMeetKey]: e.target.value,
+                              }))
+                            }
+                            placeholder="Ou collez le lien Google Meet (https://meet.google.com/xxx-xxxx-xxx) à partager avec l’élève..."
+                            className="flex-1 px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl"
+                          />
+                          <button
+                            type="button"
+                            disabled={
+                              savingMeetId === bookingMeetKey ||
+                              !(manualMeetDrafts[bookingMeetKey] || '').trim()
+                            }
+                            onClick={() => handleTeacherSaveBookingMeetLink(b.id)}
+                            className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          >
+                            <Link2 className="w-3.5 h-3.5" />
+                            <span>
+                              {savingMeetId === bookingMeetKey
+                                ? 'Partage...'
+                                : 'Partager avec l’élève'}
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

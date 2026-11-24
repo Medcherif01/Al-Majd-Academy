@@ -28,6 +28,45 @@ export const TEACHER_WHATSAPP: Record<'marwan' | 'mohamed', TeacherWhatsAppInfo>
   },
 };
 
+export function isLanguageAssignedTeacher(language?: string | null): boolean {
+  const val = (language || '').trim().toLowerCase();
+  return (
+    val.includes('english') ||
+    val === 'en' ||
+    val.includes('anglais') ||
+    val.includes('franç') ||
+    val.includes('franc') ||
+    val.includes('french') ||
+    val === 'fr' ||
+    val.includes('عرب') ||
+    val.includes('arab') ||
+    val === 'ar'
+  );
+}
+
+export function resolveTeacherForItem(params: {
+  language?: string | null;
+  curriculum?: string | null;
+  explicitTeacherId?: 'marwan' | 'mohamed' | null;
+}): 'marwan' | 'mohamed' {
+  const langVal = (params.language || '').trim().toLowerCase();
+  if (langVal.includes('english') || langVal === 'en' || langVal.includes('anglais')) {
+    return 'marwan';
+  }
+  if (
+    langVal.includes('franç') ||
+    langVal.includes('franc') ||
+    langVal.includes('french') ||
+    langVal === 'fr' ||
+    langVal.includes('عرب') ||
+    langVal.includes('arab') ||
+    langVal === 'ar'
+  ) {
+    return 'mohamed';
+  }
+  return resolveTeacherIdForCurriculum(params.curriculum, params.explicitTeacherId);
+}
+
 export function resolveTeacherIdForCurriculum(
   curriculumOrTrack?: string | null,
   explicitTeacherId?: 'marwan' | 'mohamed' | null

@@ -20,11 +20,12 @@ import {
 import { COURSE_MODULES } from '../data/curriculumData';
 import { TRANSLATIONS } from '../i18n/translations';
 import { MathText } from '../utils/mathFormat';
+import { apiRequest } from '../utils/api';
 import {
   TEACHER_WHATSAPP,
   buildWhatsAppActivationMessage,
   buildWhatsAppActivationUrl,
-  resolveTeacherIdForCurriculum,
+  resolveTeacherForItem,
 } from '../utils/whatsapp';
 import { ExamPrepHubs } from './ExamPrepHubs';
 import type {
@@ -32,6 +33,7 @@ import type {
   CourseLesson,
   CourseModule,
   CurriculumKey,
+  JoiningRequestItem,
   PaidCourseItem,
   PrepHubTab,
   ProgressState,
@@ -63,6 +65,7 @@ interface CourseWorkspaceProps {
   onNavigateToTutors: (trainerName: string) => void;
   onBookingCreated?: (booking: BookingItem) => void;
   onLaunchAiExam?: (curriculum: string) => void;
+  onJoiningRequestCreated?: (req: JoiningRequestItem) => void;
 }
 
 function downloadStudySheet(course: CourseModule, lesson: CourseLesson) {
@@ -127,8 +130,8 @@ export function CourseWorkspace({
   onRefreshPaidCourses,
   onMarkLessonComplete,
   onNavigateToTutors,
-  onBookingCreated,
   onLaunchAiExam,
+  onJoiningRequestCreated,
 }: CourseWorkspaceProps) {
   const t = TRANSLATIONS[lang];
   const [subMode, setSubMode] = useState<'courses' | 'hubs'>(initialSubMode);
@@ -138,9 +141,8 @@ export function CourseWorkspace({
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [checkpointSubmitted, setCheckpointSubmitted] = useState(false);
 
-  // Paid Course WhatsApp Activation State
+  // Paid Course WhatsApp & Teacher Portal Joining Request State
   const [checkoutCourse, setCheckoutCourse] = useState<PaidCourseItem | null>(null);
-  const [chosenTrainerId, setChosenTrainerId] = useState<'marwan' | 'mohamed'>('marwan');
   const [chosenDateSlot, setChosenDateSlot] = useState<string>(() => {
     const d = new Date();
     d.setDate(d.getDate() + 2);
@@ -151,6 +153,9 @@ export function CourseWorkspace({
   const [guestName, setGuestName] = useState<string>('');
   const [guestEmail, setGuestEmail] = useState<string>('');
   const [copiedMsg, setCopiedMsg] = useState<boolean>(false);
+  const [submittingRequest, setSubmittingRequest] = useState<boolean>(false);
+  const [submittedRequest, setSubmittedRequest] = useState<JoiningRequestItem | null>(null);
+  const [requestError, setRequestError] = useState<string | null>(null);
 
   const isTrackLocked = Boolean(trackLock && !hasPaidAccess);
   const effectiveTrack: CurriculumKey = isTrackLocked && trackLock ? trackLock.trackKey : selectedTrack;
@@ -179,7 +184,8 @@ export function CourseWorkspace({
       const target = paidCourses.find((c) => c.id === highlightPaidCourseId);
       if (target && !target.isEnrolled) {
         setCheckoutCourse(target);
-        setChosenTrainerId(target.trainerId);
+        setSubmittedRequest(null);
+        setRequestError(null);
       }
     }
   }, [highlightPaidCourseId, paidCourses]);
@@ -250,6 +256,61 @@ export function CourseWorkspace({
       setTimeout(() => setCopiedMsg(false), 2500);
     } catch {
       setCopiedMsg(false);
+    }
+  };
+
+  const openActivationModalForCourse = (courseItem: PaidCourseItem) => {
+    setCopiedMsg(false);
+    setSubmittedRequest(null);
+    setRequestError(null);
+    setCheckoutCourse(courseItem);
+  };
+
+  const submitJoiningRequest = async (courseItem: PaidCourseItem): Promise<JoiningRequestItem | null> => {
+    if (submittedRequest && submittedRequest.itemId === courseItem.id) {
+      return submittedRequest;
+    }
+    const effectiveName = (user?.name || guestName).trim();
+    const effectiveEmail = (user?.email || guestEmail).trim();
+    if (!effectiveName || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(effectiveEmail)) {
+      setRequestError(
+        lang === 'ar'
+          ? 'يرجى إدخال الاسم والبريد الإلكتروني (أو تسجيل الدخول) لإرسال الطلب إلى بوابة المدرب.'
+          : lang === 'en'
+            ? 'Please enter your name & account email (or sign in) to notify the teacher on their portal.'
+            : 'Veuillez saisir votre nom et votre e-mail (ou vous connecter) pour notifier le formateur sur son portail.'
+      );
+      return null;
+    }
+
+    setRequestError(null);
+    setSubmittingRequest(true);
+    try {
+      const assignedTeacher = resolveTeacherForItem({
+        language: courseItem.language,
+        curriculum: courseItem.curriculumLabel,
+      });
+      const res = await apiRequest<{ request: JoiningRequestItem }>('/api/joining-requests', {
+        method: 'POST',
+        token,
+        body: {
+          itemType: 'course',
+          itemId: courseItem.id,
+          teacherId: assignedTeacher,
+          studentName: effectiveName,
+          studentEmail: effectiveEmail,
+          preferredSlot: `${chosenDateSlot} (${chosenTimeSlot})`,
+          notes: courseNotes.trim(),
+        },
+      });
+      setSubmittedRequest(res.request);
+      onJoiningRequestCreated?.(res.request);
+      return res.request;
+    } catch (err: any) {
+      setRequestError(err?.message || 'Impossible d’envoyer la demande au formateur.');
+      return null;
+    } finally {
+      setSubmittingRequest(false);
     }
   };
 
@@ -619,32 +680,70 @@ export function CourseWorkspace({
                         : 'Votre accès démo limite la consultation au Chapitre 01 (essai 30 min). Contactez votre formateur sur WhatsApp ou sélectionnez un programme ci-dessous pour débloquer la suite du cours.'}
                   </p>
                   <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-                    <a
-                      href={buildWhatsAppActivationUrl({
-                        teacherId: resolveTeacherIdForCurriculum(activeCourse.curriculumLabel, activeCourse.leadTrainer.toLowerCase().includes('mohamed') ? 'mohamed' : 'marwan'),
-                        itemType: 'course',
-                        itemTitle: `${activeCourse.title} (${activeLesson.order} - ${activeLesson.title})`,
+                    {(() => {
+                      const assignedTeacherId = resolveTeacherForItem({
+                        language: activeCourse.language,
                         curriculum: activeCourse.curriculumLabel,
-                        studentName: user?.name,
-                        studentEmail: user?.email,
-                        lang,
-                      })}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-5 py-2.5 bg-[#16A34A] hover:bg-[#15803D] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5"
-                    >
-                      <MessageCircle className="w-3.5 h-3.5" />
-                      <span>
-                        {lang === 'ar'
-                          ? 'تفعيل عبر واتساب'
-                          : lang === 'en'
-                            ? 'Activate via WhatsApp'
-                            : 'Activer via WhatsApp'}
-                      </span>
-                    </a>
+                      });
+                      const matchingPaidCourse =
+                        paidCourses.find(
+                          (pc) =>
+                            pc.curriculumKey === activeCourse.curriculumKey &&
+                            pc.language === activeCourse.language
+                        ) || paidCourses.find((pc) => pc.curriculumKey === activeCourse.curriculumKey);
+
+                      return (
+                        <>
+                          {matchingPaidCourse && (
+                            <button
+                              type="button"
+                              onClick={() => openActivationModalForCourse(matchingPaidCourse)}
+                              className="px-5 py-2.5 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Unlock className="w-3.5 h-3.5" />
+                              <span>
+                                {lang === 'ar'
+                                  ? 'طلب التفعيل على بوابة المدرب'
+                                  : lang === 'en'
+                                    ? 'Request Activation & Notify Teacher'
+                                    : 'Demander l’activation au formateur'}
+                              </span>
+                            </button>
+                          )}
+                          <a
+                            href={buildWhatsAppActivationUrl({
+                              teacherId: assignedTeacherId,
+                              itemType: 'course',
+                              itemTitle: `${activeCourse.title} (${activeLesson.order} - ${activeLesson.title})`,
+                              curriculum: activeCourse.curriculumLabel,
+                              studentName: user?.name,
+                              studentEmail: user?.email,
+                              lang,
+                            })}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => {
+                              if (matchingPaidCourse && user?.name && user?.email) {
+                                void submitJoiningRequest(matchingPaidCourse);
+                              }
+                            }}
+                            className="px-5 py-2.5 bg-[#16A34A] hover:bg-[#15803D] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5"
+                          >
+                            <MessageCircle className="w-3.5 h-3.5" />
+                            <span>
+                              {lang === 'ar'
+                                ? `واتساب (${TEACHER_WHATSAPP[assignedTeacherId].defaultName})`
+                                : lang === 'en'
+                                  ? `WhatsApp (${TEACHER_WHATSAPP[assignedTeacherId].defaultName})`
+                                  : `WhatsApp (${TEACHER_WHATSAPP[assignedTeacherId].defaultName})`}
+                            </span>
+                          </a>
+                        </>
+                      );
+                    })()}
                     <a
                       href="#paid-courses-section"
-                      className="px-5 py-2.5 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-xl"
+                      className="px-5 py-2.5 bg-white border border-slate-300 hover:border-[#0B6E8C] text-[#0F2537] text-xs font-semibold rounded-xl"
                     >
                       {lang === 'ar' ? 'عرض البرامج المكثفة' : lang === 'en' ? 'View Programs' : 'Voir les programmes'}
                     </a>
@@ -875,81 +974,91 @@ export function CourseWorkspace({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {visiblePaidCourses.map((pc) => (
-            <div
-              key={pc.id}
-              dir={pc.language === 'العربية' ? 'rtl' : 'ltr'}
-              className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col justify-between shadow-xs hover:border-[#0B6E8C] transition-colors"
-            >
-              <div>
-                <div className="text-xs font-medium text-amber-800 mb-2">
-                  <span>{pc.curriculumLabel}</span>
-                  <span className="mx-1.5 text-slate-300">·</span>
-                  <span className="text-slate-600">{pc.language}</span>
+          {visiblePaidCourses.map((pc) => {
+            const assignedTid = resolveTeacherForItem({
+              language: pc.language,
+              curriculum: pc.curriculumLabel,
+            });
+            const assignedTeacherInfo = TEACHER_WHATSAPP[assignedTid];
+            return (
+              <div
+                key={pc.id}
+                dir={pc.language === 'العربية' ? 'rtl' : 'ltr'}
+                className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col justify-between shadow-xs hover:border-[#0B6E8C] transition-colors"
+              >
+                <div>
+                  <div className="text-xs font-medium text-amber-800 mb-2">
+                    <span>{pc.curriculumLabel}</span>
+                    <span className="mx-1.5 text-slate-300">·</span>
+                    <span className="text-slate-600">{pc.language}</span>
+                  </div>
+                  <h4 className="font-display text-lg font-semibold text-[#0F2537] leading-snug mb-3">
+                    {pc.title}
+                  </h4>
+                  <div className="text-xs text-slate-600 mb-2 tabular-nums">
+                    <span>{assignedTeacherInfo.defaultName}</span>
+                    <span className="mx-1.5">·</span>
+                    <span>{pc.durationWeeks} sem.</span>
+                    <span className="mx-1.5">·</span>
+                    <span>{pc.sessionsCount} séances</span>
+                  </div>
+                  <div className="text-[11px] font-mono font-semibold text-emerald-800 mb-4" dir="ltr">
+                    WhatsApp : {assignedTeacherInfo.phoneDisplay}
+                  </div>
+                  <ul className="space-y-2 mb-6">
+                    {pc.syllabusHighlights.map((hl, i) => (
+                      <li key={i} className="text-xs text-slate-700 leading-relaxed flex items-start gap-2">
+                        <span className="font-mono text-[#0B6E8C] font-semibold">•</span>
+                        <span>{hl}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <h4 className="font-display text-lg font-semibold text-[#0F2537] leading-snug mb-3">
-                  {pc.title}
-                </h4>
-                <div className="text-xs text-slate-600 mb-4 tabular-nums">
-                  <span>{pc.trainerName}</span>
-                  <span className="mx-1.5">·</span>
-                  <span>{pc.durationWeeks} sem.</span>
-                  <span className="mx-1.5">·</span>
-                  <span>{pc.sessionsCount} séances</span>
-                </div>
-                <ul className="space-y-2 mb-6">
-                  {pc.syllabusHighlights.map((hl, i) => (
-                    <li key={i} className="text-xs text-slate-700 leading-relaxed flex items-start gap-2">
-                      <span className="font-mono text-[#0B6E8C] font-semibold">•</span>
-                      <span>{hl}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
 
-              <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-3">
-                <span className="font-mono text-lg font-semibold text-[#0F2537] tabular-nums">
-                  {pc.priceSar} SAR
-                </span>
-
-                {pc.isEnrolled ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-50 text-emerald-800 text-xs font-semibold">
-                    <Unlock className="w-3.5 h-3.5" />
-                    {lang === 'ar' ? 'مفعّل' : lang === 'en' ? 'Active' : 'Activé'}
+                <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-3">
+                  <span className="font-mono text-lg font-semibold text-[#0F2537] tabular-nums">
+                    {pc.priceSar} SAR
                   </span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCopiedMsg(false);
-                      setCheckoutCourse(pc);
-                      setChosenTrainerId(pc.trainerId);
-                    }}
-                    className="px-4 py-2 bg-[#16A34A] hover:bg-[#15803D] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <MessageCircle className="w-3.5 h-3.5" />
-                    <span>
-                      {lang === 'ar'
-                        ? 'تفعيل عبر واتساب'
-                        : lang === 'en'
-                          ? 'Activate via WhatsApp'
-                          : 'Activer via WhatsApp'}
+
+                  {pc.isEnrolled ? (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-50 text-emerald-800 text-xs font-semibold">
+                      <Unlock className="w-3.5 h-3.5" />
+                      {lang === 'ar' ? 'مفعّل' : lang === 'en' ? 'Active' : 'Activé'}
                     </span>
-                  </button>
-                )}
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => openActivationModalForCourse(pc)}
+                      className="px-4 py-2 bg-[#16A34A] hover:bg-[#15803D] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      <span>
+                        {lang === 'ar'
+                          ? 'طلب التفعيل & واتساب'
+                          : lang === 'en'
+                            ? 'Join & WhatsApp'
+                            : 'Rejoindre & WhatsApp'}
+                      </span>
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
         </div>
       )}
 
-      {/* Course WhatsApp Activation Modal (Replaces Online Checkout) */}
+      {/* Course WhatsApp Activation & Teacher Portal Request Modal */}
       {checkoutCourse && (() => {
-        const activeInfo = TEACHER_WHATSAPP[chosenTrainerId];
-        const effectiveName = user?.name || guestName.trim();
-        const effectiveEmail = user?.email || guestEmail.trim();
+        const assignedTrainerId = resolveTeacherForItem({
+          language: checkoutCourse.language,
+          curriculum: checkoutCourse.curriculumLabel,
+        });
+        const activeInfo = TEACHER_WHATSAPP[assignedTrainerId];
+        const effectiveName = (user?.name || guestName).trim();
+        const effectiveEmail = (user?.email || guestEmail).trim();
         const extraDetails = [
           `1ère séance souhaitée : ${chosenDateSlot} (${chosenTimeSlot})`,
           courseNotes.trim() ? `Objectifs : ${courseNotes.trim()}` : '',
@@ -958,7 +1067,7 @@ export function CourseWorkspace({
           .join(' | ');
 
         const waParams = {
-          teacherId: chosenTrainerId,
+          teacherId: assignedTrainerId,
           teacherDisplayName: activeInfo.defaultName,
           itemType: 'course' as const,
           itemTitle: checkoutCourse.title,
@@ -992,12 +1101,12 @@ export function CourseWorkspace({
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 mb-1">
                   <MessageCircle className="w-4 h-4" />
                   <span>
-                    {checkoutCourse.curriculumLabel} ·{' '}
+                    {checkoutCourse.curriculumLabel} · {checkoutCourse.language} ·{' '}
                     {lang === 'ar'
-                      ? 'تفعيل مباشر عبر واتساب'
+                      ? 'طلب انضمام وتفعيل عبر واتساب'
                       : lang === 'en'
-                        ? 'WhatsApp Course Activation'
-                        : 'Activation WhatsApp Formateur'}
+                        ? 'Joining Request & WhatsApp'
+                        : 'Demande d’inscription & WhatsApp'}
                   </span>
                 </div>
                 <h3 className="font-display text-xl font-semibold text-slate-900">
@@ -1014,38 +1123,22 @@ export function CourseWorkspace({
                 </span>
               </div>
 
-              {/* Step 1: Choose Preferred Teacher WhatsApp */}
-              <div>
-                <label className="block text-xs font-semibold text-[#0F2537] mb-1.5">
+              {/* Locked Language-Attributed Teacher WhatsApp Card */}
+              <div className="p-3.5 rounded-xl border border-emerald-700 bg-emerald-50 text-emerald-950 space-y-1">
+                <div className="text-[11px] font-semibold text-emerald-800">
                   {lang === 'ar'
-                    ? 'اختر المدرب للتواصل عبر واتساب وتفعيل الدورة'
+                    ? `المدرب المسؤول (${checkoutCourse.language})`
                     : lang === 'en'
-                      ? 'Choose your teacher on WhatsApp'
-                      : 'Choisir votre formateur sur WhatsApp'}
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {(['marwan', 'mohamed'] as const).map((tid) => {
-                    const info = TEACHER_WHATSAPP[tid];
-                    return (
-                      <button
-                        key={tid}
-                        type="button"
-                        onClick={() => setChosenTrainerId(tid)}
-                        className={`p-3 rounded-xl border text-start transition-colors cursor-pointer ${
-                          chosenTrainerId === tid
-                            ? 'border-emerald-700 bg-emerald-50 text-emerald-950'
-                            : 'border-slate-200 text-slate-700 hover:border-slate-400'
-                        }`}
-                      >
-                        <div className="text-xs font-bold">{info.defaultName}</div>
-                        <div className="font-mono text-[11px] font-semibold text-emerald-800 mt-0.5" dir="ltr">
-                          {info.phoneDisplay}
-                        </div>
-                        <div className="text-[10px] text-slate-500 mt-0.5">{info.tracksLabel}</div>
-                      </button>
-                    );
-                  })}
+                      ? `Assigned WhatsApp Teacher (${checkoutCourse.language})`
+                      : `Formateur WhatsApp attribué (${checkoutCourse.language})`}
                 </div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-bold">{activeInfo.defaultName}</span>
+                  <span className="font-mono text-xs font-bold text-emerald-900" dir="ltr">
+                    {activeInfo.phoneDisplay}
+                  </span>
+                </div>
+                <div className="text-[11px] text-emerald-800">{activeInfo.tracksLabel}</div>
               </div>
 
               {/* Student Account Info */}
@@ -1133,7 +1226,7 @@ export function CourseWorkspace({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Objectifs / chapitres prioritaires à transmettre sur WhatsApp
+                  Objectifs / chapitres prioritaires à transmettre
                 </label>
                 <input
                   type="text"
@@ -1161,22 +1254,71 @@ export function CourseWorkspace({
                 </pre>
               </div>
 
-              <a
-                href={waUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full py-3.5 px-4 bg-[#16A34A] hover:bg-[#15803D] text-white text-sm font-semibold rounded-xl transition-colors inline-flex items-center justify-center gap-2"
-              >
-                <MessageCircle className="w-4 h-4" />
-                <span>
-                  {lang === 'ar'
-                    ? `تواصل عبر واتساب (${activeInfo.defaultName} · ${activeInfo.phoneE164})`
-                    : lang === 'en'
-                      ? `Open WhatsApp · ${activeInfo.defaultName} (${activeInfo.phoneDisplay})`
-                      : `Activer via WhatsApp · ${activeInfo.defaultName} (${activeInfo.phoneDisplay})`}
-                </span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
+              {requestError && (
+                <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-900">
+                  {requestError}
+                </div>
+              )}
+
+              {submittedRequest && (
+                <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-950 space-y-1">
+                  <div className="font-bold">
+                    {lang === 'ar'
+                      ? `تم إرسال طلب الانضمام (${submittedRequest.referenceCode}) إلى بوابة ${activeInfo.defaultName}`
+                      : lang === 'en'
+                        ? `Joining request (${submittedRequest.referenceCode}) sent to ${activeInfo.defaultName}'s portal`
+                        : `Demande d’accès (${submittedRequest.referenceCode}) envoyée sur le portail de ${activeInfo.defaultName}`}
+                  </div>
+                  <div className="text-emerald-800">
+                    {lang === 'ar'
+                      ? 'بانتظار تأكيد المدرب لفتح الفصول ومشاركة رابط Google Meet.'
+                      : lang === 'en'
+                        ? 'Waiting for teacher confirmation to unlock the course and share your Google Meet link.'
+                        : 'En attente de confirmation par le formateur pour débloquer le cours et partager votre lien Google Meet.'}
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2.5">
+                {!submittedRequest && (
+                  <button
+                    type="button"
+                    disabled={submittingRequest}
+                    onClick={() => submitJoiningRequest(checkoutCourse)}
+                    className="w-full py-3 px-4 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer disabled:opacity-60"
+                  >
+                    {submittingRequest
+                      ? 'Envoi au portail du formateur...'
+                      : lang === 'ar'
+                        ? `1. إرسال طلب الانضمام إلى بوابة ${activeInfo.defaultName}`
+                        : lang === 'en'
+                          ? `1. Send Joining Request to ${activeInfo.defaultName}'s Portal`
+                          : `1. Envoyer la demande sur le portail de ${activeInfo.defaultName}`}
+                  </button>
+                )}
+
+                <a
+                  href={waUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => {
+                    if (!submittedRequest && effectiveName && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(effectiveEmail)) {
+                      void submitJoiningRequest(checkoutCourse);
+                    }
+                  }}
+                  className="w-full py-3.5 px-4 bg-[#16A34A] hover:bg-[#15803D] text-white text-sm font-semibold rounded-xl transition-colors inline-flex items-center justify-center gap-2"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  <span>
+                    {lang === 'ar'
+                      ? `تواصل عبر واتساب (${activeInfo.defaultName} · ${activeInfo.phoneE164})`
+                      : lang === 'en'
+                        ? `Open WhatsApp · ${activeInfo.defaultName} (${activeInfo.phoneDisplay})`
+                        : `Activer via WhatsApp · ${activeInfo.defaultName} (${activeInfo.phoneDisplay})`}
+                  </span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
             </div>
           </div>
         );

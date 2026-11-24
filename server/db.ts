@@ -150,6 +150,30 @@ export interface BookingRecord {
   createdAt: string;
 }
 
+export interface JoiningRequestRecord {
+  id: string;
+  userId: string | null;
+  studentName: string;
+  studentEmail: string;
+  teacherId: 'marwan' | 'mohamed';
+  itemType: 'course' | 'past_paper' | 'all_access';
+  itemId: string;
+  itemTitle: string;
+  itemCode: string;
+  curriculum: string;
+  language: 'English' | 'Français' | 'العربية';
+  priceSar: number;
+  preferredSlot: string;
+  notes: string;
+  referenceCode: string;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewedBy: string;
+  reviewedAt: string | null;
+  meetLink: string;
+  calendarEventLink: string;
+  createdAt: string;
+}
+
 export interface OrderRecord {
   id: string;
   userId: string;
@@ -465,6 +489,31 @@ const TeacherCredentialSchema = new Schema(
   { timestamps: true }
 );
 
+const JoiningRequestSchema = new Schema(
+  {
+    userId: { type: String, default: null, index: true },
+    studentName: { type: String, required: true, trim: true },
+    studentEmail: { type: String, required: true, lowercase: true, trim: true, index: true },
+    teacherId: { type: String, enum: ['marwan', 'mohamed'], required: true, index: true },
+    itemType: { type: String, enum: ['course', 'past_paper', 'all_access'], required: true },
+    itemId: { type: String, required: true },
+    itemTitle: { type: String, required: true },
+    itemCode: { type: String, default: '' },
+    curriculum: { type: String, default: '' },
+    language: { type: String, enum: ['English', 'Français', 'العربية'], default: 'English' },
+    priceSar: { type: Number, default: 0 },
+    preferredSlot: { type: String, default: '' },
+    notes: { type: String, default: '' },
+    referenceCode: { type: String, required: true },
+    status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending', index: true },
+    reviewedBy: { type: String, default: '' },
+    reviewedAt: { type: String, default: null },
+    meetLink: { type: String, default: '' },
+    calendarEventLink: { type: String, default: '' },
+  },
+  { timestamps: true }
+);
+
 const RosterStudentModel: Model<any> =
   mongoose.models.RosterStudent || mongoose.model('RosterStudent', RosterStudentSchema);
 const WeeklyMissionModel: Model<any> =
@@ -479,6 +528,8 @@ const TrainerProfileModel: Model<any> =
   mongoose.models.TrainerProfile || mongoose.model('TrainerProfile', TrainerProfileSchema);
 const TeacherCredentialModel: Model<any> =
   mongoose.models.TeacherCredential || mongoose.model('TeacherCredential', TeacherCredentialSchema);
+const JoiningRequestModel: Model<any> =
+  mongoose.models.JoiningRequest || mongoose.model('JoiningRequest', JoiningRequestSchema);
 
 export interface TeacherCredentialRecord {
   teacherId: 'marwan' | 'mohamed';
@@ -555,6 +606,7 @@ export function isMongoConnected(): boolean {
 // In-memory store fallback when MONGODB_URI is not configured
 const memoryUsers = new Map<string, UserRecord>();
 const memoryBookings: BookingRecord[] = [];
+const memoryJoiningRequests: JoiningRequestRecord[] = [];
 const memoryOrders: OrderRecord[] = [];
 const memoryExams: GeneratedExamRecord[] = [];
 const memoryProgress = new Map<string, ProgressRecord>();
@@ -868,6 +920,32 @@ function mapDemoReportDoc(d: any): DemoReportRecord {
     reviewedBy: d.reviewedBy || '',
     reviewedAt: d.reviewedAt || null,
     createdAt: new Date(d.createdAt).toISOString(),
+  };
+}
+
+function mapJoiningRequestDoc(d: any): JoiningRequestRecord {
+  return {
+    id: String(d._id),
+    userId: d.userId || null,
+    studentName: d.studentName,
+    studentEmail: d.studentEmail,
+    teacherId: d.teacherId,
+    itemType: d.itemType,
+    itemId: d.itemId,
+    itemTitle: d.itemTitle,
+    itemCode: d.itemCode || '',
+    curriculum: d.curriculum || '',
+    language: d.language || 'English',
+    priceSar: typeof d.priceSar === 'number' ? d.priceSar : 0,
+    preferredSlot: d.preferredSlot || '',
+    notes: d.notes || '',
+    referenceCode: d.referenceCode,
+    status: d.status || 'pending',
+    reviewedBy: d.reviewedBy || '',
+    reviewedAt: d.reviewedAt || null,
+    meetLink: d.meetLink || '',
+    calendarEventLink: d.calendarEventLink || '',
+    createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : new Date().toISOString(),
   };
 }
 
@@ -1978,6 +2056,7 @@ export const db = {
         ProgressModel.deleteMany({ userId }),
         GeneratedExamModel.deleteMany({ userId }),
         DemoReportModel.deleteMany({ userId }),
+        JoiningRequestModel.deleteMany({ userId }),
       ]);
       return 'deleted';
     }
@@ -1993,6 +2072,9 @@ export const db = {
     for (let i = memoryDemoReports.length - 1; i >= 0; i--) {
       if (memoryDemoReports[i].userId === userId) memoryDemoReports.splice(i, 1);
     }
+    for (let i = memoryJoiningRequests.length - 1; i >= 0; i--) {
+      if (memoryJoiningRequests[i].userId === userId) memoryJoiningRequests.splice(i, 1);
+    }
     return 'deleted';
   },
 
@@ -2006,5 +2088,189 @@ export const db = {
     if (idx === -1) return false;
     memoryRoster.splice(idx, 1);
     return true;
+  },
+
+  // --- Joining Requests (Courses & Past Papers Activation Queue) ---
+  async findPendingJoiningRequest(
+    userId: string | null,
+    studentEmail: string,
+    itemType: 'course' | 'past_paper' | 'all_access',
+    itemId: string
+  ): Promise<JoiningRequestRecord | null> {
+    const cleanEmail = studentEmail.trim().toLowerCase();
+    if (await connectDatabase()) {
+      const orClause: any[] = [{ studentEmail: cleanEmail }];
+      if (userId) orClause.push({ userId });
+      const doc = await JoiningRequestModel.findOne({
+        status: 'pending',
+        itemType,
+        itemId,
+        $or: orClause,
+      }).lean();
+      return doc ? mapJoiningRequestDoc(doc) : null;
+    }
+    return (
+      memoryJoiningRequests.find(
+        (r) =>
+          r.status === 'pending' &&
+          r.itemType === itemType &&
+          r.itemId === itemId &&
+          ((userId && r.userId === userId) || r.studentEmail === cleanEmail)
+      ) || null
+    );
+  },
+
+  async createJoiningRequest(
+    input: Omit<JoiningRequestRecord, 'id' | 'createdAt'>
+  ): Promise<JoiningRequestRecord> {
+    const cleanEmail = input.studentEmail.trim().toLowerCase();
+    if (await connectDatabase()) {
+      const doc = await JoiningRequestModel.create({
+        ...input,
+        studentEmail: cleanEmail,
+      });
+      return mapJoiningRequestDoc(doc.toObject());
+    }
+    const record: JoiningRequestRecord = {
+      ...input,
+      studentEmail: cleanEmail,
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+    };
+    memoryJoiningRequests.unshift(record);
+    return record;
+  },
+
+  async findJoiningRequestById(id: string): Promise<JoiningRequestRecord | null> {
+    if (await connectDatabase()) {
+      if (!mongoose.isValidObjectId(id)) return null;
+      const doc = await JoiningRequestModel.findById(id).lean();
+      return doc ? mapJoiningRequestDoc(doc) : null;
+    }
+    return memoryJoiningRequests.find((r) => r.id === id) || null;
+  },
+
+  async getJoiningRequests(teacherId?: 'marwan' | 'mohamed'): Promise<JoiningRequestRecord[]> {
+    if (await connectDatabase()) {
+      const filter = teacherId ? { teacherId } : {};
+      const docs = await JoiningRequestModel.find(filter).sort({ createdAt: -1 }).lean();
+      return docs.map(mapJoiningRequestDoc);
+    }
+    return teacherId
+      ? memoryJoiningRequests.filter((r) => r.teacherId === teacherId)
+      : memoryJoiningRequests;
+  },
+
+  async getJoiningRequestsByUser(userId: string, email?: string): Promise<JoiningRequestRecord[]> {
+    const cleanEmail = email ? email.trim().toLowerCase() : '';
+    if (await connectDatabase()) {
+      const orClause: any[] = [{ userId }];
+      if (cleanEmail) orClause.push({ studentEmail: cleanEmail });
+      const docs = await JoiningRequestModel.find({ $or: orClause }).sort({ createdAt: -1 }).lean();
+      return docs.map(mapJoiningRequestDoc);
+    }
+    return memoryJoiningRequests.filter(
+      (r) => r.userId === userId || (cleanEmail && r.studentEmail === cleanEmail)
+    );
+  },
+
+  async getApprovedJoiningRequestsByEmail(email: string): Promise<JoiningRequestRecord[]> {
+    const cleanEmail = email.trim().toLowerCase();
+    if (await connectDatabase()) {
+      const docs = await JoiningRequestModel.find({
+        studentEmail: cleanEmail,
+        status: 'approved',
+      }).lean();
+      return docs.map(mapJoiningRequestDoc);
+    }
+    return memoryJoiningRequests.filter(
+      (r) => r.studentEmail === cleanEmail && r.status === 'approved'
+    );
+  },
+
+  async linkJoiningRequestsToUser(email: string, userId: string): Promise<void> {
+    const cleanEmail = email.trim().toLowerCase();
+    if (await connectDatabase()) {
+      await JoiningRequestModel.updateMany(
+        { studentEmail: cleanEmail, userId: null },
+        { $set: { userId } }
+      );
+      return;
+    }
+    for (const r of memoryJoiningRequests) {
+      if (r.studentEmail === cleanEmail && !r.userId) {
+        r.userId = userId;
+      }
+    }
+  },
+
+  async confirmJoiningRequest(
+    id: string,
+    reviewedBy: string,
+    resolvedUserId?: string | null
+  ): Promise<JoiningRequestRecord | null> {
+    const nowIso = new Date().toISOString();
+    if (await connectDatabase()) {
+      if (!mongoose.isValidObjectId(id)) return null;
+      const update: any = {
+        status: 'approved',
+        reviewedBy,
+        reviewedAt: nowIso,
+      };
+      if (resolvedUserId) update.userId = resolvedUserId;
+      const doc = await JoiningRequestModel.findByIdAndUpdate(
+        id,
+        { $set: update },
+        { new: true }
+      ).lean();
+      return doc ? mapJoiningRequestDoc(doc) : null;
+    }
+    const found = memoryJoiningRequests.find((r) => r.id === id);
+    if (!found) return null;
+    found.status = 'approved';
+    found.reviewedBy = reviewedBy;
+    found.reviewedAt = nowIso;
+    if (resolvedUserId) found.userId = resolvedUserId;
+    return found;
+  },
+
+  async rejectJoiningRequest(id: string, reviewedBy: string): Promise<JoiningRequestRecord | null> {
+    const nowIso = new Date().toISOString();
+    if (await connectDatabase()) {
+      if (!mongoose.isValidObjectId(id)) return null;
+      const doc = await JoiningRequestModel.findByIdAndUpdate(
+        id,
+        { $set: { status: 'rejected', reviewedBy, reviewedAt: nowIso } },
+        { new: true }
+      ).lean();
+      return doc ? mapJoiningRequestDoc(doc) : null;
+    }
+    const found = memoryJoiningRequests.find((r) => r.id === id);
+    if (!found) return null;
+    found.status = 'rejected';
+    found.reviewedBy = reviewedBy;
+    found.reviewedAt = nowIso;
+    return found;
+  },
+
+  async updateJoiningRequestMeetLinks(
+    id: string,
+    meetLink: string,
+    calendarEventLink: string
+  ): Promise<JoiningRequestRecord | null> {
+    if (await connectDatabase()) {
+      if (!mongoose.isValidObjectId(id)) return null;
+      const doc = await JoiningRequestModel.findByIdAndUpdate(
+        id,
+        { $set: { meetLink, calendarEventLink } },
+        { new: true }
+      ).lean();
+      return doc ? mapJoiningRequestDoc(doc) : null;
+    }
+    const found = memoryJoiningRequests.find((r) => r.id === id);
+    if (!found) return null;
+    found.meetLink = meetLink;
+    found.calendarEventLink = calendarEventLink;
+    return found;
   },
 };

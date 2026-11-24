@@ -18,10 +18,17 @@ import {
   TEACHER_WHATSAPP,
   buildWhatsAppActivationMessage,
   buildWhatsAppActivationUrl,
+  resolveTeacherForItem,
   resolveTeacherIdForCurriculum,
 } from '../utils/whatsapp';
 import { TRANSLATIONS } from '../i18n/translations';
-import type { FullPastPaper, PastPaperSummary, UiLanguage, UserProfile } from '../types/academy';
+import type {
+  FullPastPaper,
+  JoiningRequestItem,
+  PastPaperSummary,
+  UiLanguage,
+  UserProfile,
+} from '../types/academy';
 
 interface PastPapersVaultProps {
   lang: UiLanguage;
@@ -32,6 +39,7 @@ interface PastPapersVaultProps {
   onRequireAuth: () => void;
   onUserUpdated?: (user: UserProfile) => void;
   onRefreshPapers: () => Promise<void>;
+  onJoiningRequestCreated?: (req: JoiningRequestItem) => void;
 }
 
 export function PastPapersVault({
@@ -42,6 +50,7 @@ export function PastPapersVault({
   token,
   onRequireAuth,
   onRefreshPapers,
+  onJoiningRequestCreated,
 }: PastPapersVaultProps) {
   const t = TRANSLATIONS[lang];
   const [curriculumFilter, setCurriculumFilter] = useState<string>('all');
@@ -55,6 +64,9 @@ export function PastPapersVault({
   const [guestName, setGuestName] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
   const [copiedMsg, setCopiedMsg] = useState(false);
+  const [submittingRequest, setSubmittingRequest] = useState(false);
+  const [submittedRequest, setSubmittedRequest] = useState<JoiningRequestItem | null>(null);
+  const [requestError, setRequestError] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -65,11 +77,57 @@ export function PastPapersVault({
   const handleOpenWhatsAppActivation = (target: { isAllAccess: boolean; paper?: PastPaperSummary }) => {
     setFeedback(null);
     setCopiedMsg(false);
+    setSubmittedRequest(null);
+    setRequestError(null);
     const defaultTid = target.paper
-      ? resolveTeacherIdForCurriculum(target.paper.curriculum, target.paper.uploadedByTeacherId)
+      ? resolveTeacherForItem({
+          language: target.paper.language,
+          curriculum: target.paper.curriculum,
+        })
       : resolveTeacherIdForCurriculum(user?.lockedCurriculum || user?.preferredTrack);
     setSelectedTeacherId(defaultTid);
     setActivationTarget(target);
+  };
+
+  const submitJoiningRequest = async (): Promise<JoiningRequestItem | null> => {
+    if (!activationTarget) return null;
+    if (submittedRequest) return submittedRequest;
+    const effectiveName = (user?.name || guestName).trim();
+    const effectiveEmail = (user?.email || guestEmail).trim();
+    if (!effectiveName || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(effectiveEmail)) {
+      setRequestError(
+        lang === 'ar'
+          ? 'يرجى إدخال الاسم والبريد الإلكتروني (أو تسجيل الدخول) لإرسال الطلب إلى بوابة المدرب.'
+          : lang === 'en'
+            ? 'Please enter your name & account email (or sign in) to notify the teacher on their portal.'
+            : 'Veuillez saisir votre nom et votre e-mail (ou vous connecter) pour notifier le formateur sur son portail.'
+      );
+      return null;
+    }
+
+    setRequestError(null);
+    setSubmittingRequest(true);
+    try {
+      const res = await apiRequest<{ request: JoiningRequestItem }>('/api/joining-requests', {
+        method: 'POST',
+        token,
+        body: {
+          itemType: activationTarget.isAllAccess ? 'all_access' : 'past_paper',
+          itemId: activationTarget.isAllAccess ? 'all-access-pass' : activationTarget.paper?.id,
+          teacherId: selectedTeacherId,
+          studentName: effectiveName,
+          studentEmail: effectiveEmail,
+        },
+      });
+      setSubmittedRequest(res.request);
+      onJoiningRequestCreated?.(res.request);
+      return res.request;
+    } catch (err: any) {
+      setRequestError(err?.message || 'Impossible d’envoyer la demande au formateur.');
+      return null;
+    } finally {
+      setSubmittingRequest(false);
+    }
   };
 
   const handleCopyMessage = async (msg: string) => {
@@ -258,11 +316,21 @@ export function PastPapersVault({
                     </span>
                   </div>
 
-                  {paper.uploadedByTeacherName && (
-                    <div className="text-[11px] font-medium text-[#0B6E8C] mb-2">
-                      Publié par : {paper.uploadedByTeacherName}
-                    </div>
-                  )}
+                  <div className="text-[11px] font-medium text-[#0B6E8C] mb-2">
+                    {(() => {
+                      const assignedTid = resolveTeacherForItem({
+                        language: paper.language,
+                        curriculum: paper.curriculum,
+                      });
+                      const waInfo = TEACHER_WHATSAPP[assignedTid];
+                      return (
+                        <span>
+                          {lang === 'ar' ? 'المشرف :' : lang === 'en' ? 'Assigned Teacher:' : 'Formateur attribué :'}{' '}
+                          <strong>{waInfo.defaultName}</strong> · <span dir="ltr">{waInfo.phoneDisplay}</span>
+                        </span>
+                      );
+                    })()}
+                  </div>
 
                   <p className="text-xs text-slate-600 leading-relaxed mb-2 line-clamp-3">
                     <MathText text={paper.officialRuleSummary} />
@@ -583,40 +651,59 @@ export function PastPapersVault({
                 </span>
               </div>
 
-              {/* Teacher WhatsApp Selector */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  {lang === 'ar'
-                    ? 'اختر المدرب المسؤول عن تفعيل حسابك'
-                    : lang === 'en'
-                      ? 'Assigned Teacher WhatsApp'
-                      : 'Formateur à contacter sur WhatsApp'}
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {(['marwan', 'mohamed'] as const).map((tid) => {
-                    const info = TEACHER_WHATSAPP[tid];
-                    const active = selectedTeacherId === tid;
-                    return (
-                      <button
-                        key={tid}
-                        type="button"
-                        onClick={() => setSelectedTeacherId(tid)}
-                        className={`p-3 rounded-xl border text-start transition-colors cursor-pointer ${
-                          active
-                            ? 'border-emerald-700 bg-emerald-50 text-emerald-950'
-                            : 'border-slate-200 text-slate-700 hover:border-slate-400'
-                        }`}
-                      >
-                        <div className="text-xs font-bold">{info.defaultName}</div>
-                        <div className="font-mono text-[11px] font-semibold text-emerald-800 mt-0.5" dir="ltr">
-                          {info.phoneDisplay}
-                        </div>
-                        <div className="text-[10px] text-slate-500 mt-0.5">{info.tracksLabel}</div>
-                      </button>
-                    );
-                  })}
+              {/* Teacher WhatsApp Attribution (Locked by Language for Individual Past Papers) */}
+              {activationTarget.paper ? (
+                <div className="p-3.5 rounded-xl border border-emerald-700 bg-emerald-50 text-emerald-950 space-y-1">
+                  <div className="text-[11px] font-semibold text-emerald-800">
+                    {lang === 'ar'
+                      ? `المدرب المسؤول (${activationTarget.paper.language})`
+                      : lang === 'en'
+                        ? `Assigned WhatsApp Teacher (${activationTarget.paper.language})`
+                        : `Formateur WhatsApp attribué (${activationTarget.paper.language})`}
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm font-bold">{activeInfo.defaultName}</span>
+                    <span className="font-mono text-xs font-bold text-emerald-900" dir="ltr">
+                      {activeInfo.phoneDisplay}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-emerald-800">{activeInfo.tracksLabel}</div>
                 </div>
-              </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    {lang === 'ar'
+                      ? 'اختر المدرب المسؤول عن تفعيل الباقة الشاملة'
+                      : lang === 'en'
+                        ? 'Choose Assigned Teacher WhatsApp'
+                        : 'Formateur à contacter sur WhatsApp'}
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {(['marwan', 'mohamed'] as const).map((tid) => {
+                      const info = TEACHER_WHATSAPP[tid];
+                      const active = selectedTeacherId === tid;
+                      return (
+                        <button
+                          key={tid}
+                          type="button"
+                          onClick={() => setSelectedTeacherId(tid)}
+                          className={`p-3 rounded-xl border text-start transition-colors cursor-pointer ${
+                            active
+                              ? 'border-emerald-700 bg-emerald-50 text-emerald-950'
+                              : 'border-slate-200 text-slate-700 hover:border-slate-400'
+                          }`}
+                        >
+                          <div className="text-xs font-bold">{info.defaultName}</div>
+                          <div className="font-mono text-[11px] font-semibold text-emerald-800 mt-0.5" dir="ltr">
+                            {info.phoneDisplay}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">{info.tracksLabel}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Student Account Info for Activation */}
               {user ? (
@@ -709,22 +796,71 @@ export function PastPapersVault({
                 </pre>
               </div>
 
-              <a
-                href={waUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full py-3.5 px-4 bg-[#16A34A] hover:bg-[#15803D] text-white text-sm font-semibold rounded-xl transition-colors inline-flex items-center justify-center gap-2"
-              >
-                <MessageCircle className="w-4 h-4" />
-                <span>
-                  {lang === 'ar'
-                    ? `تواصل عبر واتساب (${activeInfo.defaultName} · ${activeInfo.phoneE164})`
-                    : lang === 'en'
-                      ? `Open WhatsApp · ${activeInfo.defaultName} (${activeInfo.phoneDisplay})`
-                      : `Contacter sur WhatsApp · ${activeInfo.defaultName} (${activeInfo.phoneDisplay})`}
-                </span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
+              {requestError && (
+                <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-900">
+                  {requestError}
+                </div>
+              )}
+
+              {submittedRequest && (
+                <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-950 space-y-1">
+                  <div className="font-bold">
+                    {lang === 'ar'
+                      ? `تم إرسال طلب الانضمام (${submittedRequest.referenceCode}) إلى بوابة ${activeInfo.defaultName}`
+                      : lang === 'en'
+                        ? `Joining request (${submittedRequest.referenceCode}) sent to ${activeInfo.defaultName}'s portal`
+                        : `Demande d’accès (${submittedRequest.referenceCode}) envoyée sur le portail de ${activeInfo.defaultName}`}
+                  </div>
+                  <div className="text-emerald-800">
+                    {lang === 'ar'
+                      ? 'بانتظار تأكيد المدرب ليتم فتح الاختبار في حسابك.'
+                      : lang === 'en'
+                        ? 'Waiting for teacher confirmation to unlock your Past Paper access.'
+                        : 'En attente de confirmation par le formateur pour débloquer votre accès.'}
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2.5">
+                {!submittedRequest && (
+                  <button
+                    type="button"
+                    disabled={submittingRequest}
+                    onClick={() => submitJoiningRequest()}
+                    className="w-full py-3 px-4 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer disabled:opacity-60"
+                  >
+                    {submittingRequest
+                      ? 'Envoi au portail du formateur...'
+                      : lang === 'ar'
+                        ? `1. إرسال طلب التفعيل إلى بوابة ${activeInfo.defaultName}`
+                        : lang === 'en'
+                          ? `1. Send Joining Request to ${activeInfo.defaultName}'s Portal`
+                          : `1. Envoyer la demande sur le portail de ${activeInfo.defaultName}`}
+                  </button>
+                )}
+
+                <a
+                  href={waUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => {
+                    if (!submittedRequest && effectiveName && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(effectiveEmail)) {
+                      void submitJoiningRequest();
+                    }
+                  }}
+                  className="w-full py-3.5 px-4 bg-[#16A34A] hover:bg-[#15803D] text-white text-sm font-semibold rounded-xl transition-colors inline-flex items-center justify-center gap-2"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  <span>
+                    {lang === 'ar'
+                      ? `تواصل عبر واتساب (${activeInfo.defaultName} · ${activeInfo.phoneE164})`
+                      : lang === 'en'
+                        ? `Open WhatsApp · ${activeInfo.defaultName} (${activeInfo.phoneDisplay})`
+                        : `Contacter sur WhatsApp · ${activeInfo.defaultName} (${activeInfo.phoneDisplay})`}
+                  </span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
             </div>
           </div>
         );

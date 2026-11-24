@@ -23,6 +23,7 @@ export type PrepHubTab =
 
 export type TeacherSubTab =
   | 'dashboard'
+  | 'joining-requests'
   | 'demo-reports'
   | 'tutoring-bookings'
   | 'weekly-mission'
@@ -378,5 +379,29 @@ export interface RegisteredStudentSummary {
   trialSecondsRemaining: number;
   trialExpired: boolean;
   assignedSkills: string[];
+  createdAt: string;
+}
+
+export interface JoiningRequestItem {
+  id: string;
+  userId: string | null;
+  studentName: string;
+  studentEmail: string;
+  teacherId: 'marwan' | 'mohamed';
+  itemType: 'course' | 'past_paper' | 'all_access';
+  itemId: string;
+  itemTitle: string;
+  itemCode: string;
+  curriculum: string;
+  language: 'English' | 'Français' | 'العربية';
+  priceSar: number;
+  preferredSlot: string;
+  notes: string;
+  referenceCode: string;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewedBy: string;
+  reviewedAt: string | null;
+  meetLink: string;
+  calendarEventLink: string;
   createdAt: string;
 }

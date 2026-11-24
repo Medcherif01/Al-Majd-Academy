@@ -60,6 +60,28 @@ function readCookieValue(req: express.Request, name: string): string | null {
   return null;
 }
 
+function resolveTeacherByLanguage(
+  language?: string | null,
+  fallbackTeacherId?: string | null
+): 'marwan' | 'mohamed' {
+  const langVal = (language || '').trim().toLowerCase();
+  if (langVal.includes('english') || langVal === 'en' || langVal.includes('anglais')) {
+    return 'marwan';
+  }
+  if (
+    langVal.includes('franç') ||
+    langVal.includes('franc') ||
+    langVal.includes('french') ||
+    langVal === 'fr' ||
+    langVal.includes('عرب') ||
+    langVal.includes('arab') ||
+    langVal === 'ar'
+  ) {
+    return 'mohamed';
+  }
+  return fallbackTeacherId === 'mohamed' ? 'mohamed' : 'marwan';
+}
+
 export function createApiApp() {
   const app = express();
   app.use(express.json({ limit: '15mb' }));
@@ -122,8 +144,29 @@ export function createApiApp() {
         hasAllAccessPass: false,
       });
 
-      const token = signSessionToken(user);
-      res.status(201).json({ token, user: sanitizeUser(user) });
+      let finalUser = user;
+      const preApproved = await db.getApprovedJoiningRequestsByEmail(user.email);
+      if (preApproved.length > 0) {
+        const paperIds: string[] = [];
+        let grantAll = false;
+        for (const reqItem of preApproved) {
+          if (reqItem.itemType === 'course') {
+            await db.enrollCourse(user.id, reqItem.itemId);
+          } else if (reqItem.itemType === 'past_paper') {
+            paperIds.push(reqItem.itemId);
+          } else if (reqItem.itemType === 'all_access') {
+            grantAll = true;
+          }
+        }
+        if (paperIds.length > 0 || grantAll) {
+          await db.grantPaperAccess(user.id, paperIds, grantAll);
+        }
+        finalUser = (await db.findUserById(user.id)) || user;
+      }
+      await db.linkJoiningRequestsToUser(user.email, user.id);
+
+      const token = signSessionToken(finalUser);
+      res.status(201).json({ token, user: sanitizeUser(finalUser) });
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Erreur lors de la création du compte.' });
     }
@@ -462,10 +505,13 @@ export function createApiApp() {
     }
 
     if (!meetLink) {
-      const code3 = Math.random().toString(36).substring(2, 5);
-      const code4 = Math.random().toString(36).substring(2, 6);
-      const code3b = Math.random().toString(36).substring(2, 5);
-      meetLink = `https://meet.google.com/${code3}-${code4}-${code3b}`;
+      return {
+        meetLink: '',
+        calendarEventLink,
+        warning:
+          warning ||
+          'Google Meet API n’a pas renvoyé de lien. Vérifiez les autorisations Google Meet / Agenda ou créez un lien sur meet.google.com/new puis collez-le ci-dessous.',
+      };
     }
 
     return { meetLink, calendarEventLink, warning: undefined };
@@ -587,80 +633,137 @@ export function createApiApp() {
     }
   });
 
-  app.post('/api/bookings/:id/generate-meet', requireAuth, async (req: AuthenticatedRequest, res) => {
+  app.post('/api/bookings/:id/generate-meet', requireAuth, (_req: AuthenticatedRequest, res) => {
+    res.status(403).json({
+      error:
+        'Seul votre formateur peut générer et partager le lien Google Meet depuis son portail.',
+    });
+  });
+
+  app.patch('/api/bookings/:id/meet-link', requireAuth, (_req: AuthenticatedRequest, res) => {
+    res.status(403).json({
+      error:
+        'Seul votre formateur peut définir et partager le lien Google Meet de la séance.',
+    });
+  });
+
+  // --- Student Joining Requests (Courses & Past Papers -> Teacher Notification Queue) ---
+  app.get('/api/joining-requests/my', requireAuth, async (req: AuthenticatedRequest, res) => {
+    const requests = await db.getJoiningRequestsByUser(req.user!.id, req.user!.email);
+    res.json({ requests });
+  });
+
+  app.post('/api/joining-requests', optionalAuth, async (req: AuthenticatedRequest, res) => {
     try {
-      const booking = await db.findBookingById(req.params.id);
-      if (!booking || booking.userId !== req.user!.id) {
-        res.status(404).json({ error: 'Réservation introuvable.' });
-        return;
-      }
-      if (!booking.paid) {
-        res.status(402).json({ error: 'Le paiement de la formation doit être confirmé avant de générer la réunion Google Meet.' });
-        return;
-      }
-      const headerToken =
-        typeof req.headers['x-google-access-token'] === 'string'
-          ? req.headers['x-google-access-token']
-          : '';
-      const bodyToken =
-        typeof req.body?.googleAccessToken === 'string' ? req.body.googleAccessToken : '';
-      const activeGoogleToken = bodyToken.trim() || headerToken.trim();
+      const {
+        itemType,
+        itemId,
+        teacherId,
+        studentName,
+        studentEmail,
+        preferredSlot,
+        notes,
+      } = req.body ?? {};
 
-      if (!activeGoogleToken) {
-        res.status(400).json({ error: 'Connectez votre compte Google pour créer la réunion Google Meet.' });
+      const validType: 'course' | 'past_paper' | 'all_access' | null =
+        itemType === 'course' || itemType === 'past_paper' || itemType === 'all_access'
+          ? itemType
+          : null;
+      if (!validType) {
+        res.status(400).json({ error: 'Type de demande invalide.' });
         return;
       }
 
-      const meetResult = await createGoogleMeetAndCalendarEvent(activeGoogleToken, {
-        studentName: booking.studentName,
-        trainerName: booking.trainerName,
-        curriculum: booking.curriculum,
-        subject: booking.subject,
-        dateSlot: booking.dateSlot,
-        timeSlot: booking.timeSlot,
-        durationMinutes: booking.durationMinutes,
-        weaknesses: booking.attachedWeaknesses,
-        themes: booking.themesToCover,
-      });
+      const cleanName = req.user?.name || (isNonEmptyString(studentName, 100) ? studentName.trim() : '');
+      const cleanEmail =
+        req.user?.email || (isValidEmail(studentEmail) ? studentEmail.trim().toLowerCase() : '');
 
-      if (!meetResult.meetLink) {
-        res.status(502).json({
-          error: meetResult.warning || 'Impossible de créer la salle Google Meet. Vérifiez les autorisations Google.',
+      if (!cleanName || !cleanEmail) {
+        res.status(400).json({
+          error: 'Veuillez saisir votre nom complet et votre adresse e-mail (ou vous connecter) pour envoyer la demande au formateur.',
         });
         return;
       }
 
-      const updated = await db.updateBookingMeetLinks(
-        booking.id,
-        meetResult.meetLink,
-        meetResult.calendarEventLink
-      );
-      res.json({ booking: updated });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message || 'Erreur lors de la génération Google Meet.' });
-    }
-  });
+      let resolvedItemId = typeof itemId === 'string' ? itemId.trim() : '';
+      let resolvedTitle = '';
+      let resolvedCode = '';
+      let resolvedCurriculum = '';
+      let resolvedLanguage: 'English' | 'Français' | 'العربية' = 'English';
+      let resolvedPriceSar = 0;
+      let resolvedTeacherId: 'marwan' | 'mohamed' = 'marwan';
 
-  app.patch('/api/bookings/:id/meet-link', requireAuth, async (req: AuthenticatedRequest, res) => {
-    try {
-      const booking = await db.findBookingById(req.params.id);
-      if (!booking || booking.userId !== req.user!.id) {
-        res.status(404).json({ error: 'Réservation introuvable.' });
+      if (validType === 'course') {
+        const course = PAID_COURSES_CATALOG.find((c) => c.id === resolvedItemId);
+        if (!course) {
+          res.status(404).json({ error: 'Cours introuvable dans le catalogue.' });
+          return;
+        }
+        resolvedTitle = course.title;
+        resolvedCode = course.id;
+        resolvedCurriculum = course.curriculumLabel;
+        resolvedLanguage = course.language;
+        resolvedPriceSar = course.priceSar;
+        resolvedTeacherId = resolveTeacherByLanguage(course.language, course.trainerId);
+      } else if (validType === 'past_paper') {
+        const paper = await db.findPastPaperById(resolvedItemId);
+        if (!paper) {
+          res.status(404).json({ error: 'Past Paper introuvable.' });
+          return;
+        }
+        resolvedTitle = paper.title;
+        resolvedCode = paper.code;
+        resolvedCurriculum = paper.curriculum;
+        resolvedLanguage = paper.language;
+        resolvedPriceSar = paper.priceSar;
+        resolvedTeacherId = resolveTeacherByLanguage(paper.language, paper.uploadedByTeacherId);
+      } else {
+        resolvedItemId = 'all-access-pass';
+        resolvedTitle = 'Pass Annuel Tous Examens + Corrections Officielles';
+        resolvedCode = 'ALL-ACCESS';
+        resolvedCurriculum = req.user?.lockedCurriculum || 'Tous Programmes';
+        resolvedLanguage = teacherId === 'mohamed' ? 'Français' : 'English';
+        resolvedPriceSar = ALL_ACCESS_PASS_PRICE_SAR;
+        resolvedTeacherId = teacherId === 'mohamed' ? 'mohamed' : 'marwan';
+      }
+
+      const existingPending = await db.findPendingJoiningRequest(
+        req.user?.id || null,
+        cleanEmail,
+        validType,
+        resolvedItemId
+      );
+      if (existingPending) {
+        res.json({ request: existingPending, deduplicated: true });
         return;
       }
-      if (!booking.paid) {
-        res.status(402).json({ error: 'Le paiement est requis avant d’associer un lien Google Meet.' });
-        return;
-      }
-      const rawUrl = typeof req.body?.meetLink === 'string' ? req.body.meetLink.trim() : '';
-      if (!/^https:\/\/meet\.google\.com\/[a-z0-9-]+$/i.test(rawUrl)) {
-        res.status(400).json({ error: 'Lien Google Meet invalide (format attendu : https://meet.google.com/xxx-xxxx-xxx).' });
-        return;
-      }
-      const updated = await db.updateBookingMeetLinks(booking.id, rawUrl, booking.calendarEventLink || '');
-      res.json({ booking: updated });
+
+      const refCode = `REQ-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+      const created = await db.createJoiningRequest({
+        userId: req.user?.id || null,
+        studentName: cleanName,
+        studentEmail: cleanEmail,
+        teacherId: resolvedTeacherId,
+        itemType: validType,
+        itemId: resolvedItemId,
+        itemTitle: resolvedTitle,
+        itemCode: resolvedCode,
+        curriculum: resolvedCurriculum,
+        language: resolvedLanguage,
+        priceSar: resolvedPriceSar,
+        preferredSlot: isNonEmptyString(preferredSlot, 120) ? preferredSlot.trim() : '',
+        notes: isNonEmptyString(notes, 400) ? notes.trim() : '',
+        referenceCode: refCode,
+        status: 'pending',
+        reviewedBy: '',
+        reviewedAt: null,
+        meetLink: '',
+        calendarEventLink: '',
+      });
+
+      res.status(201).json({ request: created, deduplicated: false });
     } catch (err: any) {
-      res.status(500).json({ error: err?.message || 'Erreur lors de l’enregistrement du lien Meet.' });
+      res.status(500).json({ error: err?.message || 'Erreur lors de l’envoi de la demande d’inscription.' });
     }
   });
 
@@ -1108,12 +1211,13 @@ export function createApiApp() {
       const teacherParam = req.query.teacherId;
       const teacherId =
         teacherParam === 'mohamed' ? 'mohamed' : teacherParam === 'marwan' ? 'marwan' : undefined;
-      const [students, missions, writings, demoReports, bookings] = await Promise.all([
+      const [students, missions, writings, demoReports, bookings, joiningRequests] = await Promise.all([
         db.getRosterStudents(teacherId),
         db.getWeeklyMissions(teacherId),
         db.getWritingSubmissions(teacherId),
         db.getDemoReports(teacherId),
         db.getBookingsByTrainer(teacherId),
+        db.getJoiningRequests(teacherId),
       ]);
       res.json({
         students,
@@ -1121,8 +1225,11 @@ export function createApiApp() {
         writings,
         demoReports,
         bookings,
+        joiningRequests,
         pendingWritingCount: writings.filter((w) => w.status === 'pending').length,
         pendingDemoReportsCount: demoReports.filter((r) => r.status === 'new').length,
+        pendingJoiningRequestsCount: joiningRequests.filter((r) => r.status === 'pending').length,
+        pendingBookingsCount: bookings.filter((b) => !b.paid).length,
       });
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Erreur lors du chargement du portail formateur.' });
@@ -1298,6 +1405,271 @@ export function createApiApp() {
       res.json({ booking: updated || existing });
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Erreur lors de la confirmation de la séance.' });
+    }
+  });
+
+  // --- Teacher-Only Google Meet Generation & Sharing (Bookings + Approved Courses) ---
+  app.post('/api/teacher/bookings/:id/generate-meet', async (req: AuthenticatedRequest, res) => {
+    try {
+      const booking = await db.findBookingById(req.params.id);
+      if (!booking) {
+        res.status(404).json({ error: 'Séance introuvable.' });
+        return;
+      }
+      if (!booking.paid) {
+        res.status(400).json({ error: 'Confirmez d’abord la séance avant de générer le lien Google Meet.' });
+        return;
+      }
+      const headerToken =
+        typeof req.headers['x-google-access-token'] === 'string'
+          ? req.headers['x-google-access-token']
+          : '';
+      const bodyToken =
+        typeof req.body?.googleAccessToken === 'string' ? req.body.googleAccessToken : '';
+      const activeGoogleToken = bodyToken.trim() || headerToken.trim();
+
+      if (!activeGoogleToken) {
+        res.status(400).json({ error: 'Connectez votre compte Google formateur pour générer le lien Meet.' });
+        return;
+      }
+
+      const meetResult = await createGoogleMeetAndCalendarEvent(activeGoogleToken, {
+        studentName: booking.studentName,
+        trainerName: booking.trainerName,
+        curriculum: booking.curriculum,
+        subject: booking.subject,
+        dateSlot: booking.dateSlot,
+        timeSlot: booking.timeSlot,
+        durationMinutes: booking.durationMinutes,
+        weaknesses: booking.attachedWeaknesses,
+        themes: booking.themesToCover,
+      });
+
+      if (!meetResult.meetLink) {
+        res.status(502).json({
+          error: meetResult.warning || 'Impossible de générer la salle Google Meet.',
+        });
+        return;
+      }
+
+      const updated = await db.updateBookingMeetLinks(
+        booking.id,
+        meetResult.meetLink,
+        meetResult.calendarEventLink
+      );
+      res.json({ booking: updated });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de la génération Google Meet.' });
+    }
+  });
+
+  app.patch('/api/teacher/bookings/:id/meet-link', async (req: AuthenticatedRequest, res) => {
+    try {
+      const booking = await db.findBookingById(req.params.id);
+      if (!booking) {
+        res.status(404).json({ error: 'Séance introuvable.' });
+        return;
+      }
+      const rawUrl = typeof req.body?.meetLink === 'string' ? req.body.meetLink.trim() : '';
+      if (!/^https:\/\/meet\.google\.com\/[a-z0-9-]+$/i.test(rawUrl)) {
+        res.status(400).json({ error: 'Lien Google Meet invalide (format attendu : https://meet.google.com/xxx-xxxx-xxx).' });
+        return;
+      }
+      const updated = await db.updateBookingMeetLinks(booking.id, rawUrl, booking.calendarEventLink || '');
+      res.json({ booking: updated });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de l’enregistrement du lien Meet.' });
+    }
+  });
+
+  // --- Teacher Joining Requests Queue (Confirm / Reject / Share Google Meet) ---
+  app.get('/api/teacher/joining-requests', async (req, res) => {
+    try {
+      const teacherParam = req.query.teacherId;
+      const teacherId =
+        teacherParam === 'mohamed' ? 'mohamed' : teacherParam === 'marwan' ? 'marwan' : undefined;
+      const requests = await db.getJoiningRequests(teacherId);
+      res.json({ requests });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Impossible de charger les demandes.' });
+    }
+  });
+
+  app.post('/api/teacher/joining-requests/:id/confirm', async (req: AuthenticatedRequest, res) => {
+    try {
+      const existing = await db.findJoiningRequestById(req.params.id);
+      if (!existing) {
+        res.status(404).json({ error: 'Demande d’inscription introuvable.' });
+        return;
+      }
+
+      const reviewerLabel =
+        req.teacher?.teacherId === 'mohamed' ? 'Mohamed Cherif' : 'Marwan Mhamdi';
+
+      const targetUser =
+        (existing.userId ? await db.findUserById(existing.userId) : null) ||
+        (await db.findUserByEmail(existing.studentEmail));
+
+      if (existing.status === 'approved') {
+        res.json({
+          request: existing,
+          grantedImmediately: Boolean(targetUser),
+          user: targetUser ? sanitizeUser(targetUser) : null,
+        });
+        return;
+      }
+
+      let updatedUser = targetUser;
+      if (targetUser) {
+        if (existing.itemType === 'course') {
+          if (!targetUser.enrolledCourses.includes(existing.itemId)) {
+            await db.enrollCourse(targetUser.id, existing.itemId);
+            await db.createOrder({
+              userId: targetUser.id,
+              customerEmail: targetUser.email,
+              items: [{ paperId: existing.itemId, title: existing.itemTitle, priceSar: existing.priceSar }],
+              isAllAccessPass: false,
+              totalSar: existing.priceSar,
+              paymentMethod: `WhatsApp Confirmed (${req.teacher?.teacherId || existing.teacherId})`,
+              referenceCode: existing.referenceCode,
+              status: 'paid',
+            });
+          }
+        } else if (existing.itemType === 'past_paper') {
+          if (!targetUser.unlockedPapers.includes(existing.itemId) && !targetUser.hasAllAccessPass) {
+            await db.grantPaperAccess(targetUser.id, [existing.itemId], false);
+            await db.createOrder({
+              userId: targetUser.id,
+              customerEmail: targetUser.email,
+              items: [{ paperId: existing.itemId, title: existing.itemTitle, priceSar: existing.priceSar }],
+              isAllAccessPass: false,
+              totalSar: existing.priceSar,
+              paymentMethod: `WhatsApp Confirmed (${req.teacher?.teacherId || existing.teacherId})`,
+              referenceCode: existing.referenceCode,
+              status: 'paid',
+            });
+          }
+        } else if (existing.itemType === 'all_access') {
+          if (!targetUser.hasAllAccessPass) {
+            await db.grantPaperAccess(targetUser.id, [], true);
+            await db.createOrder({
+              userId: targetUser.id,
+              customerEmail: targetUser.email,
+              items: [{ paperId: 'all-access-pass', title: existing.itemTitle, priceSar: existing.priceSar }],
+              isAllAccessPass: true,
+              totalSar: existing.priceSar,
+              paymentMethod: `WhatsApp Confirmed (${req.teacher?.teacherId || existing.teacherId})`,
+              referenceCode: existing.referenceCode,
+              status: 'paid',
+            });
+          }
+        }
+        updatedUser = await db.findUserById(targetUser.id);
+      }
+
+      const confirmed = await db.confirmJoiningRequest(
+        existing.id,
+        reviewerLabel,
+        targetUser?.id || null
+      );
+
+      res.json({
+        request: confirmed || existing,
+        grantedImmediately: Boolean(targetUser),
+        user: updatedUser ? sanitizeUser(updatedUser) : null,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de la confirmation de la demande.' });
+    }
+  });
+
+  app.post('/api/teacher/joining-requests/:id/reject', async (req: AuthenticatedRequest, res) => {
+    try {
+      const reviewerLabel =
+        req.teacher?.teacherId === 'mohamed' ? 'Mohamed Cherif' : 'Marwan Mhamdi';
+      const updated = await db.rejectJoiningRequest(req.params.id, reviewerLabel);
+      if (!updated) {
+        res.status(404).json({ error: 'Demande d’inscription introuvable.' });
+        return;
+      }
+      res.json({ request: updated });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors du refus de la demande.' });
+    }
+  });
+
+  app.post('/api/teacher/joining-requests/:id/generate-meet', async (req: AuthenticatedRequest, res) => {
+    try {
+      const jr = await db.findJoiningRequestById(req.params.id);
+      if (!jr) {
+        res.status(404).json({ error: 'Demande introuvable.' });
+        return;
+      }
+      if (jr.status !== 'approved') {
+        res.status(400).json({ error: 'Confirmez la demande avant de générer un lien Google Meet.' });
+        return;
+      }
+      const headerToken =
+        typeof req.headers['x-google-access-token'] === 'string'
+          ? req.headers['x-google-access-token']
+          : '';
+      const bodyToken =
+        typeof req.body?.googleAccessToken === 'string' ? req.body.googleAccessToken : '';
+      const activeGoogleToken = bodyToken.trim() || headerToken.trim();
+
+      if (!activeGoogleToken) {
+        res.status(400).json({ error: 'Connectez votre compte Google formateur pour générer le lien Meet.' });
+        return;
+      }
+
+      const trainer = await db.findTrainerById(jr.teacherId);
+      const dateStr = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const meetResult = await createGoogleMeetAndCalendarEvent(activeGoogleToken, {
+        studentName: jr.studentName,
+        trainerName: trainer?.name || (jr.teacherId === 'mohamed' ? 'Mohamed Cherif' : 'Marwan Mhamdi'),
+        curriculum: jr.curriculum,
+        subject: jr.itemTitle,
+        dateSlot: dateStr,
+        timeSlot: '17:00 AST',
+        durationMinutes: 60,
+        weaknesses: [],
+        themes: jr.notes ? [jr.notes] : [jr.itemTitle],
+      });
+
+      if (!meetResult.meetLink) {
+        res.status(502).json({
+          error: meetResult.warning || 'Impossible de créer la salle Google Meet.',
+        });
+        return;
+      }
+
+      const updated = await db.updateJoiningRequestMeetLinks(
+        jr.id,
+        meetResult.meetLink,
+        meetResult.calendarEventLink
+      );
+      res.json({ request: updated });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de la génération Google Meet.' });
+    }
+  });
+
+  app.patch('/api/teacher/joining-requests/:id/meet-link', async (req: AuthenticatedRequest, res) => {
+    try {
+      const jr = await db.findJoiningRequestById(req.params.id);
+      if (!jr) {
+        res.status(404).json({ error: 'Demande introuvable.' });
+        return;
+      }
+      const rawUrl = typeof req.body?.meetLink === 'string' ? req.body.meetLink.trim() : '';
+      if (!/^https:\/\/meet\.google\.com\/[a-z0-9-]+$/i.test(rawUrl)) {
+        res.status(400).json({ error: 'Lien Google Meet invalide (format attendu : https://meet.google.com/xxx-xxxx-xxx).' });
+        return;
+      }
+      const updated = await db.updateJoiningRequestMeetLinks(jr.id, rawUrl, jr.calendarEventLink || '');
+      res.json({ request: updated });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de l’enregistrement du lien Meet.' });
     }
   });
 
@@ -1596,6 +1968,7 @@ export function createApiApp() {
 
       const validLang: 'English' | 'Français' | 'العربية' =
         language === 'English' || language === 'العربية' ? language : 'Français';
+      const attributedTeacher = resolveTeacherByLanguage(validLang, validTeacher);
       const parsedYear = Math.min(2035, Math.max(1990, Number(year) || new Date().getFullYear()));
       const cleanExamDate = isNonEmptyString(examDate, 60) ? examDate.trim() : String(parsedYear);
       const cleanSession = isNonEmptyString(session, 100) ? session.trim() : cleanExamDate;
@@ -1616,7 +1989,7 @@ export function createApiApp() {
         titleOverride: typeof titleOverride === 'string' ? titleOverride.trim() : undefined,
       });
 
-      const trainer = await db.findTrainerById(validTeacher);
+      const trainer = await db.findTrainerById(attributedTeacher);
       const paperId = `tp-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
       const newPaper: PastPaperItem = {
         id: paperId,
@@ -1632,8 +2005,8 @@ export function createApiApp() {
         duration: extracted.duration,
         priceSar: cleanPrice,
         officialRuleSummary: extracted.officialRuleSummary,
-        uploadedByTeacherId: validTeacher,
-        uploadedByTeacherName: trainer?.name || (validTeacher === 'marwan' ? 'Marwan Mhamdi' : 'Mohamed Cherif'),
+        uploadedByTeacherId: attributedTeacher,
+        uploadedByTeacherName: trainer?.name || (attributedTeacher === 'marwan' ? 'Marwan Mhamdi' : 'Mohamed Cherif'),
         sourceFileName: fileName.trim(),
         freePreview: extracted.fullQuestions[0],
         fullQuestions: extracted.fullQuestions,

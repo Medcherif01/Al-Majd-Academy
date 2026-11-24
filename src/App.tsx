@@ -28,6 +28,7 @@ import type {
   CurriculumKey,
   GeneratedExam,
   GradeOption,
+  JoiningRequestItem,
   PaidCourseItem,
   PastPaperSummary,
   PlacementResult,
@@ -64,6 +65,7 @@ export default function App() {
   const [papers, setPapers] = useState<PastPaperSummary[]>([]);
   const [allAccessPrice, setAllAccessPrice] = useState<number>(290);
   const [bookings, setBookings] = useState<BookingItem[]>([]);
+  const [joiningRequests, setJoiningRequests] = useState<JoiningRequestItem[]>([]);
   const [savedExams, setSavedExams] = useState<GeneratedExam[]>([]);
   const [reopenExam, setReopenExam] = useState<GeneratedExam | null>(null);
   const [aiInitialCurriculum, setAiInitialCurriculum] = useState<string | null>(null);
@@ -154,8 +156,11 @@ export default function App() {
 
   const fetchUserWorkspaceData = useCallback(async (activeToken: string) => {
     try {
-      const [bookingsRes, examsRes, progressRes, placementRes] = await Promise.all([
+      const [bookingsRes, requestsRes, examsRes, progressRes, placementRes] = await Promise.all([
         apiRequest<{ bookings: BookingItem[] }>('/api/bookings', { token: activeToken }),
+        apiRequest<{ requests: JoiningRequestItem[] }>('/api/joining-requests/my', {
+          token: activeToken,
+        }),
         apiRequest<{ exams: GeneratedExam[] }>('/api/exams/history', { token: activeToken }),
         apiRequest<{ progress: ProgressState }>('/api/progress', { token: activeToken }),
         apiRequest<{ result: PlacementResult | null }>('/api/placement/latest', {
@@ -163,6 +168,7 @@ export default function App() {
         }),
       ]);
       setBookings(bookingsRes.bookings);
+      setJoiningRequests(requestsRes.requests || []);
       setSavedExams(examsRes.exams);
       setProgress(progressRes.progress);
       if (placementRes.result) {
@@ -172,6 +178,22 @@ export default function App() {
       console.error('Failed to load user portal data:', err);
     }
   }, []);
+
+  const refreshStudentWorkspace = useCallback(async () => {
+    if (!token) return;
+    try {
+      const meRes = await apiRequest<{ user: UserProfile }>('/api/auth/me', { token });
+      setUser(meRes.user);
+      syncUserTrackAndTrial(meRes.user);
+    } catch (err) {
+      console.error('Failed to refresh user profile:', err);
+    }
+    await Promise.all([
+      fetchPastPapers(token),
+      fetchPaidCourses(token),
+      fetchUserWorkspaceData(token),
+    ]);
+  }, [token, syncUserTrackAndTrial, fetchPastPapers, fetchPaidCourses, fetchUserWorkspaceData]);
 
   const fetchTrainers = useCallback(async () => {
     try {
@@ -213,6 +235,7 @@ export default function App() {
     setTrialStartMs(null);
     setSelectedTrack('all');
     setBookings([]);
+    setJoiningRequests([]);
     setSavedExams([]);
     setLatestPlacement(null);
     setProgress({ completedLessonIds: [], quizScores: {} });
@@ -304,6 +327,9 @@ export default function App() {
             setWorkspaceMode('student');
             if (view === 'courses') {
               setCourseSubMode('courses');
+            }
+            if (view === 'portal' && token) {
+              void refreshStudentWorkspace();
             }
             setActiveView(view);
             window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -751,6 +777,9 @@ export default function App() {
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
                     onLaunchAiExam={launchAiExam}
+                    onJoiningRequestCreated={(req) =>
+                      setJoiningRequests((prev) => [req, ...prev.filter((r) => r.id !== req.id)])
+                    }
                   />
                 </motion.div>
               )}
@@ -805,6 +834,9 @@ export default function App() {
                       syncUserTrackAndTrial(updated);
                     }}
                     onRefreshPapers={() => fetchPastPapers(token)}
+                    onJoiningRequestCreated={(req) =>
+                      setJoiningRequests((prev) => [req, ...prev.filter((r) => r.id !== req.id)])
+                    }
                   />
                 </motion.div>
               )}
@@ -827,11 +859,6 @@ export default function App() {
                     trackLock={trackLock}
                     onRequireAuth={() => setAuthModalOpen(true)}
                     onBookingCreated={(booking) => setBookings((prev) => [booking, ...prev])}
-                    onBookingUpdated={(updatedBooking) =>
-                      setBookings((prev) =>
-                        prev.map((b) => (b.id === updatedBooking.id ? updatedBooking : b))
-                      )
-                    }
                   />
                 </motion.div>
               )}
@@ -854,14 +881,11 @@ export default function App() {
                     paidCourses={paidCourses}
                     latestPlacement={latestPlacement}
                     bookings={bookings}
+                    joiningRequests={joiningRequests}
                     savedExams={savedExams}
                     onOpenAuth={() => setAuthModalOpen(true)}
                     onSignOut={handleSignOut}
-                    onBookingUpdated={(updatedBooking) =>
-                      setBookings((prev) =>
-                        prev.map((b) => (b.id === updatedBooking.id ? updatedBooking : b))
-                      )
-                    }
+                    onRefreshPortal={refreshStudentWorkspace}
                     onReopenAiExam={(ex) => {
                       setReopenExam(ex);
                       setActiveView('ai-exams');

@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   ExternalLink,
   Globe2,
-  Link2,
   MessageCircle,
   Plus,
   Video,
@@ -14,11 +13,6 @@ import {
 import { COURSE_MODULES } from '../data/curriculumData';
 import { TRANSLATIONS } from '../i18n/translations';
 import { apiRequest } from '../utils/api';
-import {
-  getCachedGoogleAccessToken,
-  initGoogleWorkspaceAuth,
-  signInWithGoogleForMeet,
-} from '../utils/googleMeetAuth';
 import { TEACHER_WHATSAPP, buildWhatsAppActivationUrl } from '../utils/whatsapp';
 import type {
   BookingItem,
@@ -39,7 +33,6 @@ interface TutoringSectionProps {
   trackLock: StudentTrackLock | null;
   onRequireAuth: () => void;
   onBookingCreated: (booking: BookingItem) => void;
-  onBookingUpdated?: (booking: BookingItem) => void;
 }
 
 const TRAINER_IMAGES: Record<'marwan' | 'mohamed', string> = {
@@ -95,7 +88,6 @@ export function TutoringSection({
   trackLock,
   onRequireAuth,
   onBookingCreated,
-  onBookingUpdated,
 }: TutoringSectionProps) {
   const t = TRANSLATIONS[lang];
   const [selectedTrainerId, setSelectedTrainerId] = useState<'marwan' | 'mohamed'>('marwan');
@@ -114,34 +106,11 @@ export function TutoringSection({
   const [themesToCover, setThemesToCover] = useState<string[]>([]);
   const [customTheme, setCustomTheme] = useState('');
 
-  // Google Workspace OAuth (Meet & Calendar)
-  const [googleEmail, setGoogleEmail] = useState<string | null>(null);
-  const [googleToken, setGoogleToken] = useState<string | null>(() => getCachedGoogleAccessToken());
-  const [googleConnecting, setGoogleConnecting] = useState(false);
-
   const [submitting, setSubmitting] = useState(false);
-  const [generatingMeet, setGeneratingMeet] = useState(false);
-  const [manualMeetUrl, setManualMeetUrl] = useState('');
-  const [savingManualMeet, setSavingManualMeet] = useState(false);
   const [error, setError] = useState('');
-  const [meetWarning, setMeetWarning] = useState('');
   const [confirmedBooking, setConfirmedBooking] = useState<BookingItem | null>(null);
 
   const timeSlot = `${timeValue} AST`;
-
-  useEffect(() => {
-    const unsub = initGoogleWorkspaceAuth(
-      (gUser, gTok) => {
-        setGoogleEmail(gUser.email || gUser.displayName || 'Google Connecté');
-        setGoogleToken(gTok);
-      },
-      () => {
-        setGoogleEmail(null);
-        setGoogleToken(null);
-      }
-    );
-    return () => unsub();
-  }, []);
 
   useEffect(() => {
     if (user?.name && !studentName) {
@@ -245,22 +214,6 @@ export function TutoringSection({
     return activeTrainer.hourlyRateSar;
   })();
 
-  const handleConnectGoogle = async () => {
-    setError('');
-    setGoogleConnecting(true);
-    try {
-      const authResult = await signInWithGoogleForMeet();
-      if (authResult) {
-        setGoogleEmail(authResult.user.email || authResult.user.displayName || 'Google Connecté');
-        setGoogleToken(authResult.accessToken);
-      }
-    } catch (err: any) {
-      setError(err.message || 'Connexion Google annulée.');
-    } finally {
-      setGoogleConnecting(false);
-    }
-  };
-
   const toggleWeakness = (item: string) => {
     setAttachedWeaknesses((prev) =>
       prev.includes(item) ? prev.filter((x) => x !== item) : [...prev, item]
@@ -303,7 +256,6 @@ export function TutoringSection({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setMeetWarning('');
     setConfirmedBooking(null);
     if (!user || !token) {
       onRequireAuth();
@@ -312,11 +264,9 @@ export function TutoringSection({
 
     setSubmitting(true);
     try {
-      const activeGoogleToken = googleToken || getCachedGoogleAccessToken() || '';
-      const res = await apiRequest<{ booking: BookingItem; meetWarning?: string }>('/api/bookings', {
+      const res = await apiRequest<{ booking: BookingItem }>('/api/bookings', {
         method: 'POST',
         token,
-        headers: activeGoogleToken ? { 'x-google-access-token': activeGoogleToken } : undefined,
         body: {
           trainerId: activeTrainer.id,
           language,
@@ -332,77 +282,12 @@ export function TutoringSection({
         },
       });
       setConfirmedBooking(res.booking);
-      if (res.meetWarning) {
-        setMeetWarning(res.meetWarning);
-      }
       onBookingCreated(res.booking);
       setNotes('');
     } catch (err: any) {
       setError(err.message || 'Impossible de confirmer la réservation.');
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const handleGenerateMeetPostPayment = async () => {
-    if (!confirmedBooking || !token) return;
-    setError('');
-    setMeetWarning('');
-    setGeneratingMeet(true);
-    try {
-      let activeGoogleToken = googleToken || getCachedGoogleAccessToken();
-      if (!activeGoogleToken) {
-        const authResult = await signInWithGoogleForMeet();
-        if (authResult) {
-          activeGoogleToken = authResult.accessToken;
-          setGoogleToken(authResult.accessToken);
-          setGoogleEmail(authResult.user.email || authResult.user.displayName || 'Google Connecté');
-        }
-      }
-      if (!activeGoogleToken) {
-        throw new Error('Connexion Google requise pour générer la salle Google Meet.');
-      }
-
-      const res = await apiRequest<{ booking: BookingItem }>(
-        `/api/bookings/${encodeURIComponent(confirmedBooking.id)}/generate-meet`,
-        {
-          method: 'POST',
-          token,
-          headers: { 'x-google-access-token': activeGoogleToken },
-          body: { googleAccessToken: activeGoogleToken },
-        }
-      );
-      setConfirmedBooking(res.booking);
-      onBookingUpdated?.(res.booking);
-    } catch (err: any) {
-      setError(err.message || 'Impossible de générer le lien Google Meet.');
-    } finally {
-      setGeneratingMeet(false);
-    }
-  };
-
-  const handleSaveManualMeetLink = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!confirmedBooking || !token || !manualMeetUrl.trim()) return;
-    setError('');
-    setSavingManualMeet(true);
-    try {
-      const res = await apiRequest<{ booking: BookingItem }>(
-        `/api/bookings/${encodeURIComponent(confirmedBooking.id)}/meet-link`,
-        {
-          method: 'PATCH',
-          token,
-          body: { meetLink: manualMeetUrl.trim() },
-        }
-      );
-      setConfirmedBooking(res.booking);
-      setManualMeetUrl('');
-      setMeetWarning('');
-      onBookingUpdated?.(res.booking);
-    } catch (err: any) {
-      setError(err.message || 'Impossible d’enregistrer le lien Google Meet.');
-    } finally {
-      setSavingManualMeet(false);
     }
   };
 
@@ -674,52 +559,15 @@ export function TutoringSection({
                   )}
                 </div>
               ) : (
-                <div className="pt-3 border-t border-emerald-200 space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <span className="text-xs text-emerald-900">
-                      {meetWarning
-                        ? `${meetWarning} — Cliquez ci-contre pour générer automatiquement la salle Google Meet.`
-                        : 'Votre séance est activée. Connectez Google pour générer le lien Google Meet partagé avec votre formateur.'}
-                    </span>
-                    <div className="flex flex-wrap items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        disabled={generatingMeet}
-                        onClick={handleGenerateMeetPostPayment}
-                        className="px-4 py-2.5 bg-[#0F2537] hover:bg-[#0B6E8C] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2 cursor-pointer"
-                      >
-                        <Video className="w-4 h-4" />
-                        <span>{generatingMeet ? 'Création Google Meet...' : 'Générer le lien Google Meet'}</span>
-                      </button>
-                      <a
-                        href="https://meet.google.com/new"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-3.5 py-2.5 bg-white border border-emerald-300 hover:border-[#0B6E8C] text-[#0F2537] text-xs font-semibold rounded-xl inline-flex items-center gap-1.5"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        <span>Ouvrir Google Meet directement</span>
-                      </a>
-                    </div>
-                  </div>
-
-                  <form onSubmit={handleSaveManualMeetLink} className="flex flex-col sm:flex-row gap-2">
-                    <input
-                      type="url"
-                      value={manualMeetUrl}
-                      onChange={(e) => setManualMeetUrl(e.target.value)}
-                      placeholder="Ou collez le lien Google Meet créé (https://meet.google.com/xxx-xxxx-xxx) pour le partager au formateur..."
-                      className="flex-1 px-3 py-2 text-xs bg-white border border-emerald-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0B6E8C]"
-                    />
-                    <button
-                      type="submit"
-                      disabled={savingManualMeet || !manualMeetUrl.trim()}
-                      className="px-4 py-2 bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                    >
-                      <Link2 className="w-3.5 h-3.5" />
-                      <span>{savingManualMeet ? 'Enregistrement...' : 'Associer le lien Meet'}</span>
-                    </button>
-                  </form>
+                <div className="pt-3 border-t border-emerald-200 flex items-center gap-2 text-xs text-emerald-900">
+                  <Video className="w-4 h-4 text-[#0B6E8C] shrink-0" />
+                  <span>
+                    {lang === 'ar'
+                      ? 'تم تفعيل الحصة — سيقوم مدربك بإنشاء رابط Google Meet ومشاركته معك مباشرة على حسابك.'
+                      : lang === 'en'
+                        ? 'Session activated — your teacher will generate and share the Google Meet link directly on your Student Portal.'
+                        : 'Séance activée — votre formateur va générer et partager le lien Google Meet directement sur votre Espace Élève.'}
+                  </span>
                 </div>
               )}
             </div>
