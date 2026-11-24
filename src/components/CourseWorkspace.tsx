@@ -2,22 +2,32 @@ import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import {
   BookOpen,
+  Calendar,
   CheckCircle2,
   ChevronRight,
   CreditCard,
   Download,
+  ExternalLink,
   FileText,
   Lock,
   Scale,
   Sparkles,
   Unlock,
+  Video,
   X,
 } from 'lucide-react';
 import { COURSE_MODULES } from '../data/curriculumData';
 import { TRANSLATIONS } from '../i18n/translations';
 import { apiRequest } from '../utils/api';
+import {
+  getCachedGoogleAccessToken,
+  initGoogleWorkspaceAuth,
+  signInWithGoogleForMeet,
+} from '../utils/googleMeetAuth';
+import { MathText } from '../utils/mathFormat';
 import { ExamPrepHubs } from './ExamPrepHubs';
 import type {
+  BookingItem,
   CourseLesson,
   CourseModule,
   CurriculumKey,
@@ -50,6 +60,7 @@ interface CourseWorkspaceProps {
   onRefreshPaidCourses: () => Promise<void>;
   onMarkLessonComplete: (lessonId: string, quizScore?: number) => Promise<void>;
   onNavigateToTutors: (trainerName: string) => void;
+  onBookingCreated?: (booking: BookingItem) => void;
   onLaunchAiExam?: (curriculum: string) => void;
 }
 
@@ -115,6 +126,7 @@ export function CourseWorkspace({
   onRefreshPaidCourses,
   onMarkLessonComplete,
   onNavigateToTutors,
+  onBookingCreated,
   onLaunchAiExam,
 }: CourseWorkspaceProps) {
   const t = TRANSLATIONS[lang];
@@ -125,11 +137,30 @@ export function CourseWorkspace({
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [checkpointSubmitted, setCheckpointSubmitted] = useState(false);
 
-  // Paid Course Enrollment Modal
+  // Paid Course Enrollment + Trainer Choice + Google Meet Scheduling
   const [checkoutCourse, setCheckoutCourse] = useState<PaidCourseItem | null>(null);
+  const [chosenTrainerId, setChosenTrainerId] = useState<'marwan' | 'mohamed'>('marwan');
+  const [chosenDateSlot, setChosenDateSlot] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 2);
+    return d.toISOString().slice(0, 10);
+  });
+  const [chosenTimeSlot, setChosenTimeSlot] = useState<string>('17:00 AST');
+  const [courseNotes, setCourseNotes] = useState<string>('');
+  const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(() =>
+    getCachedGoogleAccessToken()
+  );
+  const [googleEmail, setGoogleEmail] = useState<string | null>(null);
+  const [connectingGoogle, setConnectingGoogle] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<string>('Mada · Saudi Payments');
   const [enrolling, setEnrolling] = useState(false);
+  const [confirmedBooking, setConfirmedBooking] = useState<BookingItem | null>(null);
+  const [generatingMeetForBooking, setGeneratingMeetForBooking] = useState(false);
   const [enrollMessage, setEnrollMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    initGoogleWorkspaceAuth().catch(() => {});
+  }, []);
 
   const isTrackLocked = Boolean(trackLock && !hasPaidAccess);
   const effectiveTrack: CurriculumKey = isTrackLocked && trackLock ? trackLock.trackKey : selectedTrack;
@@ -158,6 +189,7 @@ export function CourseWorkspace({
       const target = paidCourses.find((c) => c.id === highlightPaidCourseId);
       if (target && !target.isEnrolled) {
         setCheckoutCourse(target);
+        setChosenTrainerId(target.trainerId);
       }
     }
   }, [highlightPaidCourseId, paidCourses]);
@@ -221,6 +253,20 @@ export function CourseWorkspace({
     await onMarkLessonComplete(activeLesson.id, isCorrect ? 100 : 50);
   };
 
+  const handleConnectGoogleForCourse = async () => {
+    setConnectingGoogle(true);
+    setEnrollMessage(null);
+    try {
+      const auth = await signInWithGoogleForMeet();
+      setGoogleAccessToken(auth.accessToken);
+      setGoogleEmail(auth.email);
+    } catch (err: any) {
+      setEnrollMessage({ type: 'error', text: err?.message || 'Connexion Google annulée.' });
+    } finally {
+      setConnectingGoogle(false);
+    }
+  };
+
   const handleEnrollPaidCourse = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!checkoutCourse) return;
@@ -235,28 +281,70 @@ export function CourseWorkspace({
     try {
       const res = await apiRequest<{
         order: { referenceCode: string };
+        booking?: BookingItem;
         user: UserProfile;
       }>('/api/paid-courses/enroll', {
         method: 'POST',
         token,
-        body: { courseId: checkoutCourse.id, paymentMethod },
+        body: {
+          courseId: checkoutCourse.id,
+          paymentMethod,
+          trainerId: chosenTrainerId,
+          dateSlot: chosenDateSlot,
+          timeSlot: chosenTimeSlot,
+          notes: courseNotes.trim(),
+          googleAccessToken: googleAccessToken || undefined,
+        },
       });
       onUserUpdated(res.user);
+      if (res.booking) {
+        setConfirmedBooking(res.booking);
+        onBookingCreated?.(res.booking);
+      }
       await onRefreshPaidCourses();
       setEnrollMessage({
         type: 'success',
         text:
           lang === 'ar'
-            ? `تم تسجيلك في الدورة بنجاح (${res.order.referenceCode}).`
+            ? `تم تسجيلك في الدورة بنجاح (${res.order.referenceCode}) وإرسال التقرير للمدرب.`
             : lang === 'en'
-              ? `Enrolled successfully (${res.order.referenceCode}). Your intensive course is now active in your portal.`
-              : `Inscription confirmée (${res.order.referenceCode}). Ce cours intensif est désormais actif dans votre espace.`,
+              ? `Enrolled (${res.order.referenceCode}). Paid report transmitted to your trainer with Meet scheduling.`
+              : `Inscription payante confirmée (${res.order.referenceCode}). Un rapport complet a été transmis au formateur choisi.`,
       });
       setCheckoutCourse(null);
     } catch (err: any) {
       setEnrollMessage({ type: 'error', text: err.message });
     } finally {
       setEnrolling(false);
+    }
+  };
+
+  const handleCreateMeetForEnrolledBooking = async () => {
+    if (!confirmedBooking || !token) return;
+    setGeneratingMeetForBooking(true);
+    setEnrollMessage(null);
+    try {
+      let gToken = googleAccessToken || getCachedGoogleAccessToken();
+      if (!gToken) {
+        const auth = await signInWithGoogleForMeet();
+        gToken = auth.accessToken;
+        setGoogleAccessToken(gToken);
+        setGoogleEmail(auth.email);
+      }
+      const res = await apiRequest<{ booking: BookingItem }>(
+        `/api/bookings/${encodeURIComponent(confirmedBooking.id)}/meet`,
+        {
+          method: 'POST',
+          token,
+          body: { googleAccessToken: gToken },
+        }
+      );
+      setConfirmedBooking(res.booking);
+      onBookingCreated?.(res.booking);
+    } catch (err: any) {
+      setEnrollMessage({ type: 'error', text: err?.message || 'Impossible de générer le lien Meet.' });
+    } finally {
+      setGeneratingMeetForBooking(false);
     }
   };
 
@@ -686,7 +774,9 @@ export function CourseWorkspace({
                       <BookOpen className="w-3.5 h-3.5" />
                       <span>{t.examRulesTitle}</span>
                     </div>
-                    <p className="text-sm text-slate-800 leading-relaxed">{activeLesson.officialRuleFocus}</p>
+                    <p className="text-sm text-slate-800 leading-relaxed">
+                      <MathText text={activeLesson.officialRuleFocus} />
+                    </p>
                   </div>
 
                   <div>
@@ -699,7 +789,9 @@ export function CourseWorkspace({
                           <span className="font-mono text-xs font-semibold text-emerald-700 mt-0.5 tabular-nums">
                             0{i + 1}.
                           </span>
-                          <span>{concept}</span>
+                          <span>
+                            <MathText text={concept} />
+                          </span>
                         </li>
                       ))}
                     </ul>
@@ -708,12 +800,12 @@ export function CourseWorkspace({
                   <div className="p-5 sm:p-6 rounded-xl bg-slate-50 border border-slate-200">
                     <h5 className="text-sm font-semibold text-slate-900 mb-2">{t.workedExampleTitle}</h5>
                     <p className="text-sm font-medium text-slate-900 mb-4 leading-relaxed">
-                      {activeLesson.workedExample.problem}
+                      <MathText text={activeLesson.workedExample.problem} />
                     </p>
                     <div className="space-y-2 pt-3 border-t border-slate-200">
                       {activeLesson.workedExample.solutionSteps.map((step, idx) => (
                         <p key={idx} className="text-sm text-slate-700 leading-relaxed">
-                          {step}
+                          <MathText text={step} />
                         </p>
                       ))}
                     </div>
@@ -754,7 +846,9 @@ export function CourseWorkspace({
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-slate-800 mb-4 leading-relaxed">{activeLesson.checkpoint.question}</p>
+                    <p className="text-sm text-slate-800 mb-4 leading-relaxed">
+                      <MathText text={activeLesson.checkpoint.question} />
+                    </p>
                     <div className="space-y-2 mb-4">
                       {activeLesson.checkpoint.options.map((opt, idx) => {
                         const isPicked = selectedOption === idx;
@@ -777,7 +871,7 @@ export function CourseWorkspace({
                             }}
                             className={`w-full text-start px-4 py-2.5 rounded-lg border text-sm transition-colors cursor-pointer disabled:opacity-50 ${style}`}
                           >
-                            {opt}
+                            <MathText text={opt} />
                           </button>
                         );
                       })}
@@ -798,7 +892,7 @@ export function CourseWorkspace({
                                 ? 'Explanation — '
                                 : 'Correction — '}
                         </strong>
-                        {activeLesson.checkpoint.explanation}
+                        <MathText text={activeLesson.checkpoint.explanation} />
                       </div>
                     )}
 
@@ -864,6 +958,50 @@ export function CourseWorkspace({
           </div>
         )}
 
+        {confirmedBooking && (
+          <div className="mb-8 p-6 rounded-2xl bg-[#0F2537] text-white flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
+            <div className="space-y-1">
+              <div className="text-xs font-semibold uppercase tracking-wider text-sky-300">
+                Formateur assigné &amp; Rapport transmis · {confirmedBooking.trainerName}
+              </div>
+              <div className="font-display text-xl font-bold">
+                {confirmedBooking.subject} · {confirmedBooking.dateSlot} à {confirmedBooking.timeSlot}
+              </div>
+              <p className="text-xs text-slate-300">
+                Votre formateur a reçu votre rapport de paiement et votre créneau. Rejoignez votre salle Google Meet ci-contre.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 shrink-0">
+              {confirmedBooking.meetLink ? (
+                <a
+                  href={confirmedBooking.meetLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-5 py-2.5 bg-[#0B6E8C] hover:bg-[#0E83A6] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2"
+                >
+                  <Video className="w-4 h-4" />
+                  <span>Entrer dans Google Meet</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  disabled={generatingMeetForBooking}
+                  onClick={handleCreateMeetForEnrolledBooking}
+                  className="px-5 py-2.5 bg-[#0B6E8C] hover:bg-[#0E83A6] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2 cursor-pointer"
+                >
+                  <Video className="w-4 h-4" />
+                  <span>
+                    {generatingMeetForBooking
+                      ? 'Création Google Meet...'
+                      : 'Générer & Entrer Google Meet'}
+                  </span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {visiblePaidCourses.map((pc) => (
             <div
@@ -916,6 +1054,7 @@ export function CourseWorkspace({
                         return;
                       }
                       setCheckoutCourse(pc);
+                      setChosenTrainerId(pc.trainerId);
                     }}
                     className="px-4 py-2 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 transition-colors cursor-pointer"
                   >
@@ -937,25 +1076,25 @@ export function CourseWorkspace({
         </div>
       )}
 
-      {/* Paid Course Checkout Modal */}
+      {/* Paid Course Checkout Modal with Trainer Choice & Google Meet Scheduling */}
       {checkoutCourse && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4"
           role="dialog"
           aria-modal="true"
         >
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 sm:p-8 shadow-xl relative">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 sm:p-8 shadow-xl relative max-h-[90vh] overflow-y-auto">
             <button
               type="button"
               onClick={() => setCheckoutCourse(null)}
               aria-label="Fermer"
-              className="absolute top-4 end-4 p-2 text-slate-500 hover:text-slate-900 rounded-lg"
+              className="absolute top-4 end-4 p-2 text-slate-500 hover:text-slate-900 rounded-lg cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
 
             <div className="text-xs font-semibold text-amber-800 mb-1">
-              {checkoutCourse.curriculumLabel} · {checkoutCourse.trainerName}
+              {checkoutCourse.curriculumLabel} · Programme Intensif
             </div>
             <h3 className="font-display text-xl font-semibold text-slate-900 mb-4">
               {checkoutCourse.title}
@@ -971,6 +1110,105 @@ export function CourseWorkspace({
             </div>
 
             <form onSubmit={handleEnrollPaidCourse} className="space-y-4">
+              {/* Step 1: Choose Preferred Trainer */}
+              <div>
+                <label className="block text-xs font-semibold text-[#0F2537] mb-1.5">
+                  Choisir votre formateur pour ce programme &amp; Google Meet
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'marwan' as const, label: 'Mr. Marwan Mhamdi', sub: 'English · SAT / IB / IGCSE' },
+                    { id: 'mohamed' as const, label: 'M. Mohamed Cherif', sub: 'FR / AR · NAFES / Qudurat / Bac' },
+                  ].map((tr) => (
+                    <button
+                      key={tr.id}
+                      type="button"
+                      onClick={() => setChosenTrainerId(tr.id)}
+                      className={`p-3 rounded-xl border text-start transition-colors cursor-pointer ${
+                        chosenTrainerId === tr.id
+                          ? 'border-[#0B6E8C] bg-[#EEF5F9] text-[#0F2537]'
+                          : 'border-slate-200 text-slate-700 hover:border-slate-400'
+                      }`}
+                    >
+                      <div className="text-xs font-bold">{tr.label}</div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">{tr.sub}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Step 2: Preferred Launch Date & Time */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-[#0B6E8C]" />
+                    <span>Date 1ère séance</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={chosenDateSlot}
+                    onChange={(e) => setChosenDateSlot(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Horaire (AST)
+                  </label>
+                  <select
+                    value={chosenTimeSlot}
+                    onChange={(e) => setChosenTimeSlot(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white"
+                  >
+                    {['16:00 AST', '17:00 AST', '18:30 AST', '20:00 AST'].map((ts) => (
+                      <option key={ts} value={ts}>
+                        {ts}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Objectifs / chapitres prioritaires à transmettre au formateur
+                </label>
+                <input
+                  type="text"
+                  value={courseNotes}
+                  onChange={(e) => setCourseNotes(e.target.value)}
+                  placeholder="Ex : Révision avant examen blanc, fonctions et dérivées..."
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
+                />
+              </div>
+
+              {/* Step 3: Optional Instant Google Meet Link */}
+              <div className="p-3 rounded-xl bg-[#EEF5F9] border border-[#BFD8E6] flex items-center justify-between gap-3">
+                <div className="text-xs text-[#0F2537]">
+                  <div className="font-semibold flex items-center gap-1.5">
+                    <Video className="w-3.5 h-3.5 text-[#0B6E8C]" />
+                    <span>Google Meet instantané</span>
+                  </div>
+                  <div className="text-[11px] text-slate-600">
+                    {googleAccessToken
+                      ? `Google connecté (${googleEmail || 'Prêt'}) — lien Meet généré dès paiement`
+                      : 'Optionnel : connectez Google pour créer le lien Meet immédiatement'}
+                  </div>
+                </div>
+                {!googleAccessToken && (
+                  <button
+                    type="button"
+                    disabled={connectingGoogle}
+                    onClick={handleConnectGoogleForCourse}
+                    className="px-3 py-1.5 bg-white border border-[#0B6E8C] text-[#0B6E8C] text-[11px] font-semibold rounded-lg shrink-0 cursor-pointer"
+                  >
+                    {connectingGoogle ? '...' : 'Connecter Google'}
+                  </button>
+                )}
+              </div>
+
+              {/* Step 4: Payment Method */}
               <div className="space-y-2">
                 {['Mada · Saudi Payments', 'Visa / Mastercard', 'Apple Pay'].map((m) => (
                   <button
@@ -996,10 +1234,10 @@ export function CourseWorkspace({
                 {enrolling
                   ? '...'
                   : lang === 'ar'
-                    ? 'تأكيد التسجيل والدفع'
+                    ? 'تأكيد التسجيل والدفع وإرسال التقرير للمدرب'
                     : lang === 'en'
-                      ? 'Confirm Course Enrollment'
-                      : 'Confirmer l’inscription payante'}
+                      ? 'Confirm Payment & Notify Trainer'
+                      : 'Confirmer le paiement & Envoyer rapport au formateur'}
               </button>
             </form>
           </div>

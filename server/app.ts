@@ -10,8 +10,12 @@ import {
   hashPassword,
   optionalAuth,
   requireAuth,
+  requireTeacherAuth,
   sanitizeUser,
+  signGuestTrialToken,
   signSessionToken,
+  signTeacherToken,
+  verifyGuestTrialToken,
   verifyPassword,
   type AuthenticatedRequest,
 } from './auth.ts';
@@ -19,6 +23,7 @@ import {
   ALL_ACCESS_PASS_PRICE_SAR,
   type PastPaperItem,
 } from './catalog.ts';
+import { buildBoardThemedA4PaperHtml } from './examDesign.ts';
 import {
   buildPlacementQuestions,
   evaluatePlacementTest,
@@ -41,84 +46,18 @@ function isValidEmail(val: unknown): val is string {
   return typeof val === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim());
 }
 
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function buildPrintablePaperHtml(paper: PastPaperItem, buyerName: string, buyerEmail: string): string {
-  const isRtl = paper.language === 'العربية';
-  const dirAttr = isRtl ? 'rtl' : 'ltr';
-  const dateDisplay = paper.examDate ? `${paper.examDate} (${paper.year})` : String(paper.year);
-  const questionsHtml = paper.fullQuestions
-    .map(
-      (q) => `
-      <section class="question-block">
-        <div class="q-header">
-          <span class="q-num">Question ${q.number}</span>
-          <span class="q-marks">${q.marks} ${q.marks > 1 ? 'marks' : 'mark'}</span>
-        </div>
-        <p class="q-prompt" style="white-space: pre-wrap;">${escapeHtml(q.prompt)}</p>
-        <div class="mark-scheme">
-          <div class="ms-title">Official Mark Scheme / Correction Officielle</div>
-          <p style="white-space: pre-wrap;">${escapeHtml(q.markScheme)}</p>
-          <p class="examiner-note"><strong>Examiner Note:</strong> ${escapeHtml(q.examinerNote)}</p>
-        </div>
-      </section>
-    `
-    )
-    .join('\n');
-
-  return `<!doctype html>
-<html lang="${isRtl ? 'ar' : paper.language === 'Français' ? 'fr' : 'en'}" dir="${dirAttr}">
-<head>
-  <meta charset="UTF-8" />
-  <title>${escapeHtml(paper.code)} — ${escapeHtml(paper.title)}</title>
-  <style>
-    body { font-family: Georgia, 'Times New Roman', serif; max-width: 840px; margin: 40px auto; padding: 0 24px; color: #0f172a; line-height: 1.65; }
-    header { border-bottom: 2px solid #0f2537; padding-bottom: 16px; margin-bottom: 24px; }
-    .brand { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #0b6e8c; font-weight: bold; font-family: sans-serif; }
-    h1 { font-size: 24px; margin: 8px 0; color: #0f2537; }
-    .meta { font-size: 14px; color: #475569; font-family: sans-serif; }
-    .meta-grid { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: 13px; color: #0f2537; font-family: sans-serif; }
-    .meta-tag { background: #eef5f9; border: 1px solid #bfd8e6; padding: 4px 10px; border-radius: 6px; }
-    .rules { background: #f8fafc; border: 1px solid #cbd5e1; padding: 14px 18px; margin-bottom: 28px; font-size: 14px; }
-    .question-block { border-bottom: 1px solid #e2e8f0; padding: 20px 0; page-break-inside: avoid; }
-    .q-header { display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 8px; font-family: sans-serif; }
-    .q-marks { color: #0b6e8c; }
-    .q-prompt { font-size: 16px; margin-bottom: 14px; }
-    .mark-scheme { background: #f0fdf4; border: 1px solid #bbf7d0; padding: 14px 16px; font-size: 14px; }
-    .ms-title { font-weight: bold; color: #065f46; margin-bottom: 6px; font-family: sans-serif; }
-    .examiner-note { color: #334155; margin-top: 8px; font-size: 13px; }
-    footer { margin-top: 36px; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 12px; }
-    @media print { .no-print { display: none; } }
-  </style>
-</head>
-<body>
-  <header>
-    <div class="brand">Al-Majd International Academy · Official Exam Pack &amp; Mark Scheme (HTML)</div>
-    <h1>${escapeHtml(paper.title)}</h1>
-    <div class="meta">${escapeHtml(paper.code)} · ${escapeHtml(paper.curriculum)} · ${escapeHtml(paper.session)} · ${escapeHtml(paper.duration)}</div>
-    <div class="meta-grid">
-      <span class="meta-tag"><strong>Matière :</strong> ${escapeHtml(paper.subject)}</span>
-      <span class="meta-tag"><strong>Date / Année :</strong> ${escapeHtml(dateDisplay)}</span>
-      <span class="meta-tag"><strong>Catégorie :</strong> ${escapeHtml(paper.curriculum)}</span>
-      ${paper.uploadedByTeacherName ? `<span class="meta-tag"><strong>Publié par :</strong> ${escapeHtml(paper.uploadedByTeacherName)}</span>` : ''}
-    </div>
-  </header>
-  <div class="rules">
-    <strong>Official Examination Rules:</strong> ${escapeHtml(paper.officialRuleSummary)}
-  </div>
-  ${questionsHtml}
-  <footer>
-    Licensed to ${escapeHtml(buyerName)} (${escapeHtml(buyerEmail)}) · Al-Majd International Academy (Saudi Arabia International Schools Portal).
-  </footer>
-</body>
-</html>`;
+function readCookieValue(req: express.Request, name: string): string | null {
+  const cookieHeader = req.headers.cookie;
+  if (!cookieHeader) return null;
+  const parts = cookieHeader.split(';');
+  for (const part of parts) {
+    const idx = part.indexOf('=');
+    if (idx === -1) continue;
+    if (part.slice(0, idx).trim() === name) {
+      return decodeURIComponent(part.slice(idx + 1).trim());
+    }
+  }
+  return null;
 }
 
 export function createApiApp() {
@@ -269,6 +208,36 @@ export function createApiApp() {
     res.json({
       entitlements: computeUserEntitlements(req.user!),
       user: sanitizeUser(req.user!),
+    });
+  });
+
+  app.post('/api/trial/start-guest', (req, res) => {
+    const rawHeader = typeof req.headers['x-trial-token'] === 'string' ? req.headers['x-trial-token'] : '';
+    const existingToken = rawHeader || readCookieValue(req, 'almajd_trial') || '';
+    if (existingToken) {
+      const verified = verifyGuestTrialToken(existingToken);
+      if (verified) {
+        res.json({
+          trialToken: existingToken,
+          ...verified,
+        });
+        return;
+      }
+    }
+    const startedAtMs = Date.now();
+    const durationSec = 1800;
+    const trialToken = signGuestTrialToken(startedAtMs, durationSec);
+    res.cookie('almajd_trial', trialToken, {
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 48 * 60 * 60 * 1000,
+    });
+    res.json({
+      trialToken,
+      startedAtMs,
+      durationSec,
+      secondsRemaining: durationSec,
+      expired: false,
     });
   });
 
@@ -427,8 +396,8 @@ export function createApiApp() {
       return;
     }
 
-    const html = buildPrintablePaperHtml(paper, user.name, user.email);
-    const safeFilename = `${paper.code.replace(/[^a-zA-Z0-9_-]/g, '_')}_with_MarkScheme.html`;
+    const html = buildBoardThemedA4PaperHtml(paper, user.name, user.email);
+    const safeFilename = `${paper.code.replace(/[^a-zA-Z0-9_-]/g, '_')}_A4_MarkScheme.html`;
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
     res.send(html);
@@ -802,7 +771,7 @@ export function createApiApp() {
     }
   });
 
-  // --- Gemini AI Exam Generator ---
+  // --- Gemini AI Exam Generator (Strict 30-Minute Trial Enforcement) ---
   app.post('/api/exams/generate', optionalAuth, async (req: AuthenticatedRequest, res) => {
     try {
       if (req.user) {
@@ -810,9 +779,23 @@ export function createApiApp() {
         if (entitlements.trialExpired) {
           res.status(402).json({
             error:
-              'Votre essai gratuit de 30 minutes est terminé. Inscrivez-vous à un cours payant ou réservez une séance privée pour continuer.',
+              'Votre essai gratuit de 30 minutes est terminé. Le paiement d’un cours ou d’une séance est requis pour accéder à la génération IA.',
           });
           return;
+        }
+      } else {
+        const guestHeader =
+          typeof req.headers['x-trial-token'] === 'string' ? req.headers['x-trial-token'] : '';
+        const guestToken = guestHeader || readCookieValue(req, 'almajd_trial') || '';
+        if (guestToken) {
+          const guestTrial = verifyGuestTrialToken(guestToken);
+          if (guestTrial && guestTrial.expired) {
+            res.status(402).json({
+              error:
+                'Votre essai gratuit de 30 minutes est expiré. Passez au paiement pour débloquer la génération d’examens Gemini IA.',
+            });
+            return;
+          }
         }
       }
 
@@ -1050,7 +1033,15 @@ export function createApiApp() {
   app.post('/api/paid-courses/enroll', requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
       const user = req.user!;
-      const { courseId, paymentMethod } = req.body ?? {};
+      const {
+        courseId,
+        paymentMethod,
+        trainerId,
+        dateSlot,
+        timeSlot,
+        notes,
+        googleAccessToken,
+      } = req.body ?? {};
       const course = PAID_COURSES_CATALOG.find((c) => c.id === courseId);
       if (!course) {
         res.status(404).json({ error: 'Cours payant introuvable.' });
@@ -1076,12 +1067,107 @@ export function createApiApp() {
       });
 
       const updatedUser = await db.enrollCourse(user.id, course.id);
+
+      // Automatically assign selected trainer (or course lead trainer) and generate a Paid Training Report + optional Google Meet
+      const resolvedTrainerId: 'marwan' | 'mohamed' =
+        trainerId === 'mohamed' || trainerId === 'marwan' ? trainerId : course.trainerId;
+      const chosenTrainer = await db.findTrainerById(resolvedTrainerId);
+      const trainerName = chosenTrainer?.name || course.trainerName;
+      const defaultDate = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const chosenDate = isNonEmptyString(dateSlot, 40) ? dateSlot.trim() : defaultDate;
+      const chosenTime = isNonEmptyString(timeSlot, 40) ? timeSlot.trim() : '17:00 AST';
+
+      const headerGoogleToken =
+        typeof req.headers['x-google-access-token'] === 'string'
+          ? req.headers['x-google-access-token']
+          : '';
+      const activeGoogleToken =
+        (typeof googleAccessToken === 'string' && googleAccessToken.trim()) || headerGoogleToken;
+
+      const weaknesses = Array.isArray(user.teacherWeaknesses) ? user.teacherWeaknesses : [];
+      const themes = course.syllabusHighlights.slice(0, 4);
+      let meetLink = '';
+      let calendarEventLink = '';
+
+      if (activeGoogleToken) {
+        const meetRes = await createGoogleMeetAndCalendarEvent(activeGoogleToken, {
+          studentName: user.name,
+          trainerName,
+          curriculum: course.curriculumLabel,
+          subject: course.title,
+          dateSlot: chosenDate,
+          timeSlot: chosenTime,
+          durationMinutes: 60,
+          weaknesses,
+          themes,
+        });
+        meetLink = meetRes.meetLink;
+        calendarEventLink = meetRes.calendarEventLink;
+      }
+
+      const booking = await db.createBooking({
+        userId: user.id,
+        studentName: user.name,
+        contactEmail: user.email,
+        trainerId: resolvedTrainerId,
+        trainerName,
+        language: course.language,
+        curriculum: course.curriculumLabel,
+        subject: course.title,
+        sessionPackage: `Cours Intensif Payant (${course.sessionsCount} séances)`,
+        durationMinutes: 60,
+        durationLabel: '60 min (Accueil & Diagnostic)',
+        dateSlot: chosenDate,
+        timeSlot: chosenTime,
+        attachedWeaknesses: weaknesses,
+        themesToCover: themes,
+        paymentMethod: method,
+        paymentReference: refCode,
+        paid: true,
+        meetLink,
+        calendarEventLink,
+        priceSar: course.priceSar,
+        status: 'confirmed',
+        notes: isNonEmptyString(notes, 400)
+          ? notes.trim()
+          : `Inscription confirmée au programme payant ${course.title}.`,
+      });
+
       res.status(201).json({
         order,
+        booking,
         user: updatedUser ? sanitizeUser(updatedUser) : sanitizeUser(user),
       });
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Erreur lors de l’inscription au cours.' });
+    }
+  });
+
+  // --- Student Writing Submission (accessible to students) ---
+  app.post('/api/writing/submit', async (req, res) => {
+    try {
+      const { teacherId, studentName, grade, track, prompt, content } = req.body ?? {};
+      if (!isNonEmptyString(studentName, 100) || !isNonEmptyString(content, 5000)) {
+        res.status(400).json({ error: 'Nom de l’élève et texte de rédaction requis.' });
+        return;
+      }
+      const wordCount = content.trim().split(/\s+/).length;
+      const submission = await db.createWritingSubmission({
+        teacherId: teacherId === 'mohamed' ? 'mohamed' : 'marwan',
+        studentName: studentName.trim(),
+        grade: isNonEmptyString(grade, 40) ? grade.trim() : 'Grade 11',
+        track: isNonEmptyString(track, 60) ? track.trim() : 'IELTS Task 2',
+        prompt: isNonEmptyString(prompt, 400) ? prompt.trim() : 'Academic Essay Practice',
+        content: content.trim(),
+        wordCount,
+        status: 'pending',
+        score: null,
+        teacherFeedback: '',
+        reviewedBy: '',
+      });
+      res.status(201).json({ submission });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de la soumission.' });
     }
   });
 
@@ -1104,7 +1190,129 @@ export function createApiApp() {
     }
   });
 
-  // --- Teacher Portal Routes (Marwan Mhamdi & Mohamed Cherif) ---
+  // --- Private Teacher Portal Authentication (Password + Login Gate) ---
+  app.get('/api/teacher/auth/status', async (_req, res) => {
+    const envPass = process.env.TEACHER_PORTAL_PASSCODE?.trim();
+    const hasStored = await db.hasAnyTeacherCredentials();
+    res.json({
+      configured: Boolean(envPass) || hasStored,
+      envManaged: Boolean(envPass),
+    });
+  });
+
+  app.post('/api/teacher/auth/setup', async (req, res) => {
+    try {
+      const envPass = process.env.TEACHER_PORTAL_PASSCODE?.trim();
+      const hasStored = await db.hasAnyTeacherCredentials();
+      if (envPass || hasStored) {
+        res.status(409).json({
+          error: 'Les accès formateurs sont déjà configurés. Utilisez le formulaire de connexion.',
+        });
+        return;
+      }
+
+      const { marwanLogin, mohamedLogin, password, initialTeacherId } = req.body ?? {};
+      if (!isNonEmptyString(password, 128) || password.trim().length < 6) {
+        res.status(400).json({ error: 'Le mot de passe privé doit contenir au moins 6 caractères.' });
+        return;
+      }
+
+      const { hash, salt } = hashPassword(password.trim());
+      const marwanEmail = isNonEmptyString(marwanLogin, 120)
+        ? marwanLogin.trim().toLowerCase()
+        : 'rmarwan26@alekhaaschools.com';
+      const mohamedEmail = isNonEmptyString(mohamedLogin, 120)
+        ? mohamedLogin.trim().toLowerCase()
+        : 'm.cherif@almajd-academy.sa';
+
+      await db.saveTeacherCredential({
+        teacherId: 'marwan',
+        loginAliases: [marwanEmail, 'marwan', 'rmarwan26@alekhaaschools.com', 'marwan mhamdi'],
+        passwordHash: hash,
+        salt,
+      });
+
+      await db.saveTeacherCredential({
+        teacherId: 'mohamed',
+        loginAliases: [
+          mohamedEmail,
+          'mohamed',
+          'm.cherif@almajd-academy.sa',
+          'cherifmed2030@gmail.com',
+          'mohamed cherif',
+        ],
+        passwordHash: hash,
+        salt,
+      });
+
+      const activeTid: 'marwan' | 'mohamed' = initialTeacherId === 'mohamed' ? 'mohamed' : 'marwan';
+      const activeLogin = activeTid === 'mohamed' ? mohamedEmail : marwanEmail;
+      const token = signTeacherToken(activeTid, activeLogin);
+
+      res.status(201).json({
+        token,
+        teacherId: activeTid,
+        login: activeLogin,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de la configuration des accès.' });
+    }
+  });
+
+  app.post('/api/teacher/auth/login', async (req, res) => {
+    try {
+      const { login, password } = req.body ?? {};
+      if (!isNonEmptyString(login, 120) || !isNonEmptyString(password, 128)) {
+        res.status(400).json({ error: 'Identifiant (login) et mot de passe requis.' });
+        return;
+      }
+
+      const cleanLogin = login.trim().toLowerCase();
+      const envPass = process.env.TEACHER_PORTAL_PASSCODE?.trim();
+
+      if (envPass) {
+        const a = Buffer.from(password.trim());
+        const b = Buffer.from(envPass);
+        if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+          res.status(401).json({ error: 'Identifiant ou mot de passe formateur incorrect.' });
+          return;
+        }
+        const resolvedTid: 'marwan' | 'mohamed' =
+          cleanLogin.includes('mohamed') || cleanLogin.includes('cherif') ? 'mohamed' : 'marwan';
+        const token = signTeacherToken(resolvedTid, cleanLogin);
+        res.json({ token, teacherId: resolvedTid, login: cleanLogin });
+        return;
+      }
+
+      const creds = await db.getTeacherCredentials();
+      if (creds.length === 0) {
+        res.status(412).json({
+          error: 'Aucun mot de passe formateur configuré. Veuillez initialiser l’accès formateur.',
+        });
+        return;
+      }
+
+      const matched = creds.find((c) => c.loginAliases.includes(cleanLogin));
+      if (!matched || !verifyPassword(password.trim(), matched.passwordHash, matched.salt)) {
+        res.status(401).json({ error: 'Identifiant ou mot de passe formateur incorrect.' });
+        return;
+      }
+
+      const token = signTeacherToken(matched.teacherId, cleanLogin);
+      res.json({ token, teacherId: matched.teacherId, login: cleanLogin });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de l’authentification.' });
+    }
+  });
+
+  app.get('/api/teacher/auth/me', requireTeacherAuth, (req: AuthenticatedRequest, res) => {
+    res.json({ teacher: req.teacher });
+  });
+
+  // Protect ALL remaining /api/teacher/* administrative endpoints
+  app.use('/api/teacher', requireTeacherAuth);
+
+  // --- Teacher Portal Protected Routes (Marwan Mhamdi & Mohamed Cherif) ---
   app.get('/api/teacher/overview', async (req, res) => {
     try {
       const teacherParam = req.query.teacherId;
@@ -1128,6 +1336,81 @@ export function createApiApp() {
       });
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Erreur lors du chargement du portail formateur.' });
+    }
+  });
+
+  app.get('/api/teacher/accounts', async (_req, res) => {
+    try {
+      const [users, orders, bookings] = await Promise.all([
+        db.getAllUsers(),
+        db.getAllOrders(),
+        db.getBookingsByTrainer(undefined),
+      ]);
+
+      const accounts = users.map((u) => {
+        const ent = computeUserEntitlements(u);
+        const userOrders = orders.filter((o) => o.userId === u.id);
+        const userBookings = bookings.filter((b) => b.userId === u.id);
+        const totalOrdersSar = userOrders.reduce((s, o) => s + (o.totalSar || 0), 0);
+        const hasPaid =
+          ent.hasPaidAccess ||
+          u.unlockedPapers.length > 0 ||
+          userOrders.some((o) => o.status === 'paid' && o.totalSar > 0) ||
+          userBookings.some((b) => b.paid);
+
+        return {
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          role: u.role,
+          lockedGrade: u.lockedGrade,
+          lockedCurriculum: u.lockedCurriculum,
+          hasPaidAccess: hasPaid,
+          enrolledCoursesCount: u.enrolledCourses?.length || 0,
+          unlockedPapersCount: u.unlockedPapers?.length || 0,
+          bookingsCount: userBookings.length,
+          totalOrdersSar,
+          trialSecondsRemaining: ent.trialSecondsRemaining,
+          trialExpired: ent.trialExpired,
+          createdAt: u.createdAt,
+        };
+      });
+
+      res.json({ accounts });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Impossible de charger les comptes élèves.' });
+    }
+  });
+
+  app.delete('/api/teacher/accounts/:userId', async (req, res) => {
+    try {
+      const result = await db.deleteUnpaidUser(req.params.userId);
+      if (result === 'not_found') {
+        res.status(404).json({ error: 'Compte élève introuvable.' });
+        return;
+      }
+      if (result === 'paid_protected') {
+        res.status(400).json({
+          error: 'Impossible de supprimer un élève ayant déjà payé un cours, un Past Paper ou une séance.',
+        });
+        return;
+      }
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de la suppression du compte.' });
+    }
+  });
+
+  app.delete('/api/teacher/students/:id', async (req, res) => {
+    try {
+      const deleted = await db.deleteRosterStudent(req.params.id);
+      if (!deleted) {
+        res.status(404).json({ error: 'Élève introuvable dans la liste.' });
+        return;
+      }
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de la suppression.' });
     }
   });
 
@@ -1438,7 +1721,7 @@ export function createApiApp() {
       };
 
       const saved = await db.createPastPaper(newPaper);
-      const previewHtml = buildPrintablePaperHtml(
+      const previewHtml = buildBoardThemedA4PaperHtml(
         saved,
         saved.uploadedByTeacherName || 'Admin Teacher',
         'admin@almajd-academy.sa'

@@ -209,7 +209,10 @@ Generate an authentic, rigorous exam paper strictly adhering to the official rul
 Output MUST be entirely in the requested language: "${input.language}".
 For MCQ questions, provide exactly 4 clear answer choices in "options" and set "correctAnswer" to match one exact option string.
 For short_answer questions, set "options" to an empty array [] and provide the exact canonical answer in "correctAnswer".
-Every question must include a detailed "officialExplanation" showing step-by-step working and a practical "examinerTip".`;
+Every question must include a detailed "officialExplanation" showing step-by-step working and a practical "examinerTip".
+MATHEMATICAL & SCIENTIFIC TYPOGRAPHY RULES:
+- Never output messy raw LaTeX delimiters ($) or prose ASCII clutter.
+- Use clear structured powers (`x^{2}`, `10^{-5}`, `e^{-2t}`), subscripts (`u_{n+1}`, `CO_{2}`, `H_{2}O`), fractions (`\\frac{a}{b}`), roots (`\\sqrt{x}`), and official mathematical symbols (`≤`, `≥`, `≠`, `×`, `÷`, `±`, `π`, `Δ`, `∑`, `∫`, `→`, `∈ ℝ`, `°`) so equations render cleanly as real academic notation.`;
 
   const prompt = `Create a ${count}-question exam paper:
 - Curriculum / Exam System: ${input.curriculum}
@@ -218,7 +221,7 @@ Every question must include a detailed "officialExplanation" showing step-by-ste
 - Difficulty Level: ${input.difficulty}
 - Focus Topic: ${input.topic || 'Core Comprehensive Exam Syllabus'}
 
-Ensure mathematical clarity (clean readable notation like x^2, sqrt(x), fractions a/b) and authentic Saudi international school context where relevant.`;
+Ensure official mathematical & scientific formatting (real powers, subscripts, fractions, SI units) and authentic Saudi international school context where relevant.`;
 
   const response = await generateContentWithResilience(ai, {
     contents: prompt,
@@ -344,7 +347,8 @@ STRICT VERBATIM PRESERVATION RULES:
 2. Preserve the original question numbering and exact mark allocations.
 3. If the document includes a mark scheme / correction / answer key, transcribe that exact official answer & working verbatim in "markScheme". Only if the document has no answer key provided, write a concise, mathematically accurate solution directly solving that exact verbatim question in "markScheme" and clearly note "Correction rédigée à partir de l'énoncé officiel".
 4. Preserve the exact language of the exam (${input.language}).
-5. Include all instructions/rules from the exam header in "officialRuleSummary".`;
+5. Include all instructions/rules from the exam header in "officialRuleSummary".
+6. For mathematical or scientific expressions in the document, preserve exact values using clean structured exponents (x^{2}, 10^{-5}), subscripts (u_{n}, CO_{2}), fractions (\\frac{a}{b}), roots (\\sqrt{x}), and official symbols (≤, ≥, ≠, ×, π, Δ, ∫, ∑) without raw "$" delimiters.`;
 
   const metadataHeader = `Document metadata supplied by the Teacher Admin:
 - File Name: ${input.fileName}

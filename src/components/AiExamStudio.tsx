@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, Clock, Lock, Printer, RotateCcw, Sparkles, XCircle } from 'lucide-react';
 import { apiRequest } from '../utils/api';
+import { ExamBoardCrestSvg, getExamBoardTheme } from '../utils/examBoardThemes';
+import { MathText } from '../utils/mathFormat';
 import { TRANSLATIONS } from '../i18n/translations';
 import type { CurriculumKey, GeneratedExam, StudentTrackLock, UiLanguage } from '../types/academy';
 
 interface AiExamStudioProps {
   lang: UiLanguage;
   token: string | null;
+  trialToken?: string | null;
   initialExam?: GeneratedExam | null;
   initialCurriculum?: string | null;
   trackLock: StudentTrackLock | null;
@@ -46,6 +49,7 @@ function mapTrackKeyToAiCurricula(trackKey: Exclude<CurriculumKey, 'all'>): stri
 export function AiExamStudio({
   lang,
   token,
+  trialToken,
   initialExam,
   initialCurriculum,
   trackLock,
@@ -165,6 +169,7 @@ export function AiExamStudio({
       const res = await apiRequest<{ exam: GeneratedExam }>('/api/exams/generate', {
         method: 'POST',
         token,
+        headers: !token && trialToken ? { 'x-trial-token': trialToken } : undefined,
         body: {
           curriculum,
           subject,
@@ -401,42 +406,64 @@ export function AiExamStudio({
                 </p>
               </div>
             </div>
-          ) : (
+          ) : (() => {
+            const examTheme = getExamBoardTheme(activeExam.curriculum);
+            const triggerA4ExamPrint = () => {
+              document.body.classList.add('printing-a4-sheet');
+              const cleanup = () => {
+                document.body.classList.remove('printing-a4-sheet');
+                window.removeEventListener('afterprint', cleanup);
+              };
+              window.addEventListener('afterprint', cleanup);
+              window.print();
+              setTimeout(cleanup, 1500);
+            };
+            return (
             <div
-              className="bg-white border border-slate-200 rounded-xl overflow-hidden"
+              className="a4-printable-document bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs"
               dir={activeExam.language === 'العربية' ? 'rtl' : 'ltr'}
             >
-              <div className="p-6 sm:p-8 bg-slate-900 text-white">
+              <div className={`p-6 sm:p-8 bg-gradient-to-r ${examTheme.headerGradientClass} text-white`}>
                 <div className="flex flex-wrap items-center justify-between gap-4 mb-3">
-                  <div className="text-xs text-emerald-300 font-medium">
-                    <span>{activeExam.curriculum}</span>
-                    <span className="mx-2">·</span>
-                    <span>{activeExam.subject}</span>
-                    <span className="mx-2">·</span>
-                    <span>{activeExam.difficulty}</span>
+                  <div className="flex items-center gap-3 text-xs text-white/90 font-medium">
+                    <div className="w-10 h-10 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center shrink-0">
+                      <ExamBoardCrestSvg curriculum={activeExam.curriculum} className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <div className="font-mono text-[10px] uppercase tracking-wider text-white/80">
+                        {examTheme.boardTitle}
+                      </div>
+                      <div>
+                        <span>{activeExam.curriculum}</span>
+                        <span className="mx-2">·</span>
+                        <span>{activeExam.subject}</span>
+                        <span className="mx-2">·</span>
+                        <span>{activeExam.difficulty}</span>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-4 font-mono text-xs tabular-nums">
-                    <span className="inline-flex items-center gap-1.5 text-slate-200">
+                    <span className="inline-flex items-center gap-1.5 text-white/90">
                       <Clock className="w-3.5 h-3.5" />
                       {formatTimer(secondsElapsed)} / {activeExam.durationMinutes}m
                     </span>
                     <button
                       type="button"
-                      onClick={() => window.print()}
-                      className="inline-flex items-center gap-1 text-slate-200 hover:text-white cursor-pointer"
+                      onClick={triggerA4ExamPrint}
+                      className="no-a4-print inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white cursor-pointer"
                     >
                       <Printer className="w-3.5 h-3.5" />
-                      <span>{lang === 'ar' ? 'طباعة' : lang === 'en' ? 'Print' : 'Imprimer'}</span>
+                      <span>{lang === 'ar' ? 'طباعة PDF A4' : lang === 'en' ? 'Print A4 PDF' : 'Imprimer PDF A4'}</span>
                     </button>
                   </div>
                 </div>
 
                 <h3 className="font-display text-2xl font-semibold text-white mb-3">
-                  {activeExam.title}
+                  <MathText text={activeExam.title} />
                 </h3>
-                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-                  {activeExam.officialRulesSummary}
+                <p className="text-xs sm:text-sm text-white/90 leading-relaxed">
+                  <MathText text={activeExam.officialRulesSummary} />
                 </p>
               </div>
 
@@ -449,7 +476,7 @@ export function AiExamStudio({
                   return (
                     <div
                       key={q.number}
-                      className="pb-6 border-b border-slate-200 last:border-b-0 last:pb-0"
+                      className="a4-avoid-break pb-6 border-b border-slate-200 last:border-b-0 last:pb-0"
                     >
                       <div className="flex items-center justify-between gap-4 mb-2.5">
                         <span className="font-mono text-xs font-semibold text-emerald-800">
@@ -461,7 +488,7 @@ export function AiExamStudio({
                       </div>
 
                       <p className="text-base font-medium text-slate-900 mb-4 leading-relaxed">
-                        {q.prompt}
+                        <MathText text={q.prompt} />
                       </p>
 
                       {q.questionType === 'mcq' && q.options.length > 0 ? (
@@ -485,7 +512,7 @@ export function AiExamStudio({
                                 onClick={() => setAnswers((prev) => ({ ...prev, [q.number]: opt }))}
                                 className={`text-start px-4 py-3 rounded-lg border text-sm transition-colors cursor-pointer ${cls}`}
                               >
-                                {opt}
+                                <MathText text={opt} />
                               </button>
                             );
                           })}
@@ -515,7 +542,9 @@ export function AiExamStudio({
                             {isCorrect ? (
                               <>
                                 <CheckCircle2 className="w-4 h-4 text-emerald-700" />
-                                <span className="text-emerald-800">{q.correctAnswer}</span>
+                                <span className="text-emerald-800">
+                                  <MathText text={q.correctAnswer} />
+                                </span>
                               </>
                             ) : (
                               <>
@@ -526,12 +555,14 @@ export function AiExamStudio({
                                     : activeExam.language === 'Français'
                                       ? 'Réponse attendue :'
                                       : 'Official Answer:'}{' '}
-                                  {q.correctAnswer}
+                                  <MathText text={q.correctAnswer} />
                                 </span>
                               </>
                             )}
                           </div>
-                          <p className="text-slate-700 leading-relaxed">{q.officialExplanation}</p>
+                          <p className="text-slate-700 leading-relaxed">
+                            <MathText text={q.officialExplanation} />
+                          </p>
                           <p className="text-xs text-slate-500">
                             <strong>
                               {activeExam.language === 'العربية'
@@ -540,7 +571,7 @@ export function AiExamStudio({
                                   ? 'Conseil du jury :'
                                   : 'Examiner Tip:'}
                             </strong>{' '}
-                            {q.examinerTip}
+                            <MathText text={q.examinerTip} />
                           </p>
                         </div>
                       )}
@@ -548,7 +579,7 @@ export function AiExamStudio({
                   );
                 })}
 
-                <div className="pt-6 border-t border-slate-200 flex flex-wrap items-center justify-between gap-4">
+                <div className="no-a4-print pt-6 border-t border-slate-200 flex flex-wrap items-center justify-between gap-4">
                   {!submitted ? (
                     <button
                       type="button"
@@ -597,7 +628,8 @@ export function AiExamStudio({
                 </div>
               </div>
             </div>
-          )}
+            );
+          })()}
         </div>
       </div>
     </section>

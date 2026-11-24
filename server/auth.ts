@@ -28,18 +28,27 @@ interface SessionPayload {
   exp: number;
 }
 
-export function signSessionToken(user: Pick<UserRecord, 'id' | 'email'>): string {
-  const payload: SessionPayload = {
-    userId: user.id,
-    email: user.email,
-    exp: Date.now() + 7 * 24 * 60 * 60 * 1000,
-  };
+interface TeacherTokenPayload {
+  type: 'teacher';
+  teacherId: 'marwan' | 'mohamed';
+  login: string;
+  exp: number;
+}
+
+interface GuestTrialPayload {
+  type: 'guest-trial';
+  startedAtMs: number;
+  durationSec: number;
+  exp: number;
+}
+
+function signHmacToken(payload: object): string {
   const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const sig = crypto.createHmac('sha256', getSessionSecret()).update(encoded).digest('base64url');
   return `${encoded}.${sig}`;
 }
 
-export function verifySessionToken(token: string): SessionPayload | null {
+function verifyHmacToken<T extends { exp?: number }>(token: string): T | null {
   if (!token || !token.includes('.')) return null;
   const parts = token.split('.');
   if (parts.length !== 2) return null;
@@ -51,8 +60,8 @@ export function verifySessionToken(token: string): SessionPayload | null {
     return null;
   }
   try {
-    const parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as SessionPayload;
-    if (!parsed.userId || !parsed.exp || parsed.exp < Date.now()) {
+    const parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as T;
+    if (!parsed.exp || parsed.exp < Date.now()) {
       return null;
     }
     return parsed;
@@ -61,8 +70,70 @@ export function verifySessionToken(token: string): SessionPayload | null {
   }
 }
 
+export function signSessionToken(user: Pick<UserRecord, 'id' | 'email'>): string {
+  const payload: SessionPayload = {
+    userId: user.id,
+    email: user.email,
+    exp: Date.now() + 7 * 24 * 60 * 60 * 1000,
+  };
+  return signHmacToken(payload);
+}
+
+export function verifySessionToken(token: string): SessionPayload | null {
+  const parsed = verifyHmacToken<SessionPayload>(token);
+  return parsed && parsed.userId ? parsed : null;
+}
+
+export function signTeacherToken(teacherId: 'marwan' | 'mohamed', login: string): string {
+  const payload: TeacherTokenPayload = {
+    type: 'teacher',
+    teacherId,
+    login,
+    exp: Date.now() + 24 * 60 * 60 * 1000,
+  };
+  return signHmacToken(payload);
+}
+
+export function verifyTeacherToken(token: string): TeacherTokenPayload | null {
+  const parsed = verifyHmacToken<TeacherTokenPayload>(token);
+  if (!parsed || parsed.type !== 'teacher') return null;
+  if (parsed.teacherId !== 'marwan' && parsed.teacherId !== 'mohamed') return null;
+  return parsed;
+}
+
+export function signGuestTrialToken(startedAtMs = Date.now(), durationSec = 1800): string {
+  const payload: GuestTrialPayload = {
+    type: 'guest-trial',
+    startedAtMs,
+    durationSec,
+    exp: Date.now() + 48 * 60 * 60 * 1000,
+  };
+  return signHmacToken(payload);
+}
+
+export function verifyGuestTrialToken(token: string): {
+  startedAtMs: number;
+  durationSec: number;
+  secondsRemaining: number;
+  expired: boolean;
+} | null {
+  const parsed = verifyHmacToken<GuestTrialPayload>(token);
+  if (!parsed || parsed.type !== 'guest-trial' || !Number.isFinite(parsed.startedAtMs)) {
+    return null;
+  }
+  const elapsed = Math.floor((Date.now() - parsed.startedAtMs) / 1000);
+  const secondsRemaining = Math.max(0, parsed.durationSec - Math.max(0, elapsed));
+  return {
+    startedAtMs: parsed.startedAtMs,
+    durationSec: parsed.durationSec,
+    secondsRemaining,
+    expired: secondsRemaining <= 0,
+  };
+}
+
 export interface AuthenticatedRequest extends Request {
   user?: UserRecord;
+  teacher?: { teacherId: 'marwan' | 'mohamed'; login: string };
 }
 
 function extractBearerToken(req: Request): string | null {
@@ -102,6 +173,21 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
     return;
   }
   req.user = user;
+  next();
+}
+
+export function requireTeacherAuth(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
+  const token = extractBearerToken(req);
+  if (!token) {
+    res.status(401).json({ error: 'Accès formateur privé requis. Veuillez vous authentifier.' });
+    return;
+  }
+  const payload = verifyTeacherToken(token);
+  if (!payload) {
+    res.status(401).json({ error: 'Session formateur expirée ou invalide.' });
+    return;
+  }
+  req.teacher = { teacherId: payload.teacherId, login: payload.login };
   next();
 }
 

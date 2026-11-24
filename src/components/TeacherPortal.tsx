@@ -11,16 +11,22 @@ import {
   Copy,
   Download,
   ExternalLink,
+  Eye,
+  EyeOff,
   FileSpreadsheet,
   FileText,
   FileUp,
   GraduationCap,
+  KeyRound,
   Layers,
+  Lock,
+  LogOut,
   PenTool,
   Plus,
   Printer,
   Save,
   Send,
+  ShieldCheck,
   Sparkles,
   Target,
   Trash2,
@@ -30,13 +36,17 @@ import {
   Video,
 } from 'lucide-react';
 import { apiRequest } from '../utils/api';
+import { ExamBoardCrestSvg, getExamBoardTheme } from '../utils/examBoardThemes';
+import { MathText } from '../utils/mathFormat';
 import { ExamPrepHubs } from './ExamPrepHubs';
+import { InteractiveWhiteboard } from './InteractiveWhiteboard';
 import type {
   BookingItem,
   DemoReport,
   FullPastPaper,
   PastPaperSummary,
   PrepHubTab,
+  RegisteredStudentSummary,
   RosterStudent,
   TeacherSubTab,
   TrainerProfile,
@@ -52,6 +62,7 @@ interface TeacherPortalProps {
   onLaunchAiExam?: (curriculum: string) => void;
   onTrainersUpdated?: () => Promise<void> | void;
   onPapersUpdated?: () => Promise<void> | void;
+  onExitTeacherMode?: () => void;
 }
 
 const PAST_PAPER_CATEGORIES = [
@@ -141,7 +152,23 @@ export function TeacherPortal({
   onLaunchAiExam,
   onTrainersUpdated,
   onPapersUpdated,
+  onExitTeacherMode,
 }: TeacherPortalProps) {
+  // Private Teacher Authentication State (memory-only token)
+  const [teacherToken, setTeacherToken] = useState<string | null>(null);
+  const [authChecking, setAuthChecking] = useState(true);
+  const [authConfigured, setAuthConfigured] = useState(false);
+  const [authUsesEnvPasscode, setAuthUsesEnvPasscode] = useState(false);
+  const [authLoginInput, setAuthLoginInput] = useState('rmarwan26@alekhaaschools.com');
+  const [authPasswordInput, setAuthPasswordInput] = useState('');
+  const [authShowPassword, setAuthShowPassword] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [setupMarwanLogin, setSetupMarwanLogin] = useState('rmarwan26@alekhaaschools.com');
+  const [setupMohamedLogin, setSetupMohamedLogin] = useState('m.cherif@almajd-academy.sa');
+  const [setupPassword, setSetupPassword] = useState('');
+  const [setupConfirm, setSetupConfirm] = useState('');
+
   const [teacherId, setTeacherId] = useState<'marwan' | 'mohamed'>('marwan');
   const [activeTab, setActiveTab] = useState<TeacherSubTab>('students-codes');
   const [loading, setLoading] = useState(false);
@@ -154,6 +181,19 @@ export function TeacherPortal({
   const [demoReports, setDemoReports] = useState<DemoReport[]>([]);
   const [pendingDemoReportsCount, setPendingDemoReportsCount] = useState(0);
   const [bookings, setBookings] = useState<BookingItem[]>([]);
+
+  // Registered Student Accounts (Paid vs Unpaid)
+  const [accounts, setAccounts] = useState<RegisteredStudentSummary[]>([]);
+  const [accountsFilter, setAccountsFilter] = useState<'all' | 'paid' | 'unpaid'>('all');
+  const [accountsSearch, setAccountsSearch] = useState('');
+  const [confirmDeleteUserId, setConfirmDeleteUserId] = useState<string | null>(null);
+
+  // Active Interactive Whiteboard Session Banner
+  const [whiteboardSession, setWhiteboardSession] = useState<{
+    studentName: string;
+    subject: string;
+    meetLink: string;
+  } | null>(null);
 
   // Demo Report Skill Attribution Editor
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
@@ -250,59 +290,169 @@ export function TeacherPortal({
     setReportFeedback(rep.teacherFeedback || '');
   };
 
-  const fetchOverview = useCallback(async (tid: 'marwan' | 'mohamed') => {
-    setLoading(true);
+  const refreshAuthStatus = useCallback(async () => {
+    setAuthChecking(true);
     try {
-      const res = await apiRequest<{
-        students: RosterStudent[];
-        missions: WeeklyMission[];
-        writings: WritingSubmission[];
-        demoReports?: DemoReport[];
-        bookings?: BookingItem[];
-        pendingWritingCount: number;
-        pendingDemoReportsCount?: number;
-      }>(`/api/teacher/overview?teacherId=${tid}`);
-      setStudents(res.students);
-      setMissions(res.missions);
-      setWritings(res.writings);
-      setPendingWritingCount(res.pendingWritingCount);
-
-      const reports = res.demoReports || [];
-      setDemoReports(reports);
-      setPendingDemoReportsCount(res.pendingDemoReportsCount ?? reports.filter((r) => r.status === 'new').length);
-      setBookings(res.bookings || []);
-
-      if (reports.length > 0) {
-        const firstNew = reports.find((r) => r.status === 'new') || reports[0];
-        loadReportIntoEditor(firstNew);
-      } else {
-        setSelectedReportId(null);
-      }
-
-      if (res.writings.length > 0) {
-        const firstPending = res.writings.find((w) => w.status === 'pending') || res.writings[0];
-        setSelectedWritingId(firstPending.id);
-        setReviewScore(firstPending.score ?? 85);
-        setReviewFeedback(firstPending.teacherFeedback || '');
-      } else {
-        setSelectedWritingId(null);
-      }
+      const status = await apiRequest<{
+        configured: boolean;
+        usesEnvPasscode: boolean;
+        teacherLogins: string[];
+      }>('/api/teacher/auth/status');
+      setAuthConfigured(status.configured);
+      setAuthUsesEnvPasscode(status.usesEnvPasscode);
     } catch (err) {
-      console.error('Failed to fetch teacher overview:', err);
+      console.error('Failed to check teacher auth status:', err);
     } finally {
-      setLoading(false);
+      setAuthChecking(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchOverview(teacherId);
+    refreshAuthStatus();
+  }, [refreshAuthStatus]);
+
+  const handleTeacherSetup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    if (setupPassword.length < 6) {
+      setAuthError('Le mot de passe privé doit contenir au moins 6 caractères.');
+      return;
+    }
+    if (setupPassword !== setupConfirm) {
+      setAuthError('Les deux mots de passe ne correspondent pas.');
+      return;
+    }
+    setAuthSubmitting(true);
+    try {
+      const res = await apiRequest<{
+        token: string;
+        teacherId: 'marwan' | 'mohamed';
+        login: string;
+      }>('/api/teacher/auth/setup', {
+        method: 'POST',
+        body: {
+          marwanLogin: setupMarwanLogin,
+          mohamedLogin: setupMohamedLogin,
+          password: setupPassword,
+        },
+      });
+      setAuthConfigured(true);
+      setTeacherToken(res.token);
+      setTeacherId(res.teacherId);
+      setSetupPassword('');
+      setSetupConfirm('');
+    } catch (err: any) {
+      setAuthError(err?.message || 'Erreur lors de la configuration initiale.');
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  const handleTeacherLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthSubmitting(true);
+    try {
+      const res = await apiRequest<{
+        token: string;
+        teacherId: 'marwan' | 'mohamed';
+        login: string;
+      }>('/api/teacher/auth/login', {
+        method: 'POST',
+        body: {
+          login: authLoginInput,
+          password: authPasswordInput,
+        },
+      });
+      setTeacherToken(res.token);
+      setTeacherId(res.teacherId);
+      setAuthPasswordInput('');
+    } catch (err: any) {
+      setAuthError(err?.message || 'Identifiants formateur invalides.');
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  const fetchOverview = useCallback(
+    async (tid: 'marwan' | 'mohamed', activeAuthToken: string) => {
+      setLoading(true);
+      try {
+        const res = await apiRequest<{
+          students: RosterStudent[];
+          missions: WeeklyMission[];
+          writings: WritingSubmission[];
+          demoReports?: DemoReport[];
+          bookings?: BookingItem[];
+          pendingWritingCount: number;
+          pendingDemoReportsCount?: number;
+        }>(`/api/teacher/overview?teacherId=${tid}`, { token: activeAuthToken });
+        setStudents(res.students);
+        setMissions(res.missions);
+        setWritings(res.writings);
+        setPendingWritingCount(res.pendingWritingCount);
+
+        const reports = res.demoReports || [];
+        setDemoReports(reports);
+        setPendingDemoReportsCount(
+          res.pendingDemoReportsCount ?? reports.filter((r) => r.status === 'new').length
+        );
+        setBookings(res.bookings || []);
+
+        if (reports.length > 0) {
+          const firstNew = reports.find((r) => r.status === 'new') || reports[0];
+          loadReportIntoEditor(firstNew);
+        } else {
+          setSelectedReportId(null);
+        }
+
+        if (res.writings.length > 0) {
+          const firstPending =
+            res.writings.find((w) => w.status === 'pending') || res.writings[0];
+          setSelectedWritingId(firstPending.id);
+          setReviewScore(firstPending.score ?? 85);
+          setReviewFeedback(firstPending.teacherFeedback || '');
+        } else {
+          setSelectedWritingId(null);
+        }
+      } catch (err: any) {
+        if (String(err?.message || '').includes('Session formateur') || String(err?.message || '').includes('Accès formateur')) {
+          setTeacherToken(null);
+        }
+        console.error('Failed to fetch teacher overview:', err);
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
+
+  const fetchAccounts = useCallback(async (activeAuthToken: string) => {
+    try {
+      const res = await apiRequest<{ accounts: RegisteredStudentSummary[] }>(
+        '/api/teacher/accounts',
+        { token: activeAuthToken }
+      );
+      setAccounts(res.accounts);
+    } catch (err: any) {
+      if (String(err?.message || '').includes('Session formateur') || String(err?.message || '').includes('Accès formateur')) {
+        setTeacherToken(null);
+      }
+      console.error('Failed to fetch student accounts:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!teacherToken) return;
+    fetchOverview(teacherId, teacherToken);
+    fetchAccounts(teacherToken);
     setSelectedSkills([
       CURATED_SKILLS_BY_TEACHER[teacherId][0],
       CURATED_SKILLS_BY_TEACHER[teacherId][1],
     ]);
     setPaperLanguage(teacherId === 'mohamed' ? 'Français' : 'English');
     setPaperCategory(teacherId === 'mohamed' ? 'NAFES (ETEC)' : 'IB Diploma');
-  }, [teacherId, fetchOverview]);
+  }, [teacherId, teacherToken, fetchOverview, fetchAccounts]);
 
   useEffect(() => {
     if (!activeTrainerObj) return;
@@ -332,11 +482,12 @@ export function TeacherPortal({
 
   const handleCreateStudents = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!namesText.trim()) return;
+    if (!namesText.trim() || !teacherToken) return;
     setCreatingStudents(true);
     try {
       const res = await apiRequest<{ created: RosterStudent[] }>('/api/teacher/students', {
         method: 'POST',
+        token: teacherToken,
         body: { teacherId, namesText, grade, className, program },
       });
       setStudents((prev) => [...res.created, ...prev]);
@@ -351,13 +502,43 @@ export function TeacherPortal({
     }
   };
 
+  const handleDeleteRosterStudent = async (studentId: string) => {
+    if (!teacherToken) return;
+    try {
+      await apiRequest(`/api/teacher/students/${encodeURIComponent(studentId)}`, {
+        method: 'DELETE',
+        token: teacherToken,
+      });
+      setStudents((prev) => prev.filter((s) => s.id !== studentId));
+      showToast('Élève retiré de la liste.');
+    } catch (err: any) {
+      showToast(err?.message || 'Erreur lors de la suppression.');
+    }
+  };
+
+  const handleDeleteUnpaidAccount = async (userId: string) => {
+    if (!teacherToken) return;
+    try {
+      await apiRequest(`/api/teacher/accounts/${encodeURIComponent(userId)}`, {
+        method: 'DELETE',
+        token: teacherToken,
+      });
+      setAccounts((prev) => prev.filter((a) => a.id !== userId));
+      setConfirmDeleteUserId(null);
+      showToast('Compte élève non payé supprimé définitivement.');
+    } catch (err: any) {
+      showToast(err?.message || 'Suppression refusée.');
+    }
+  };
+
   const handleAssignSkills = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedSkills.length === 0) return;
+    if (selectedSkills.length === 0 || !teacherToken) return;
     setAssigningSkills(true);
     try {
       const res = await apiRequest<{ students: RosterStudent[] }>('/api/teacher/assign-skills', {
         method: 'POST',
+        token: teacherToken,
         body: {
           teacherId,
           grade: assignGrade,
@@ -376,11 +557,12 @@ export function TeacherPortal({
 
   const handleCreateMission = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!missionTitle.trim()) return;
+    if (!missionTitle.trim() || !teacherToken) return;
     setCreatingMission(true);
     try {
       const res = await apiRequest<{ mission: WeeklyMission }>('/api/teacher/missions', {
         method: 'POST',
+        token: teacherToken,
         body: {
           teacherId,
           grade: missionGrade,
@@ -403,11 +585,12 @@ export function TeacherPortal({
   };
 
   const handleAiDraftFeedback = async (submissionId: string) => {
+    if (!teacherToken) return;
     setAiDrafting(true);
     try {
       const draft = await apiRequest<{ suggestedScore: number; suggestedFeedback: string }>(
         `/api/teacher/writing/${encodeURIComponent(submissionId)}/ai-draft`,
-        { method: 'POST' }
+        { method: 'POST', token: teacherToken }
       );
       setReviewScore(draft.suggestedScore);
       setReviewFeedback(draft.suggestedFeedback);
@@ -421,13 +604,14 @@ export function TeacherPortal({
 
   const handlePublishReview = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedWritingId || !reviewFeedback.trim()) return;
+    if (!selectedWritingId || !reviewFeedback.trim() || !teacherToken) return;
     setSavingReview(true);
     try {
       const res = await apiRequest<{ submission: WritingSubmission }>(
         `/api/teacher/writing/${encodeURIComponent(selectedWritingId)}/review`,
         {
           method: 'POST',
+          token: teacherToken,
           body: {
             score: reviewScore,
             teacherFeedback: reviewFeedback,
@@ -474,7 +658,7 @@ export function TeacherPortal({
 
   const handleAttributeReport = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedReport || reportSkills.length === 0) return;
+    if (!selectedReport || reportSkills.length === 0 || !teacherToken) return;
     setSavingReport(true);
     try {
       const strengths = reportStrengthsText
@@ -490,6 +674,7 @@ export function TeacherPortal({
         `/api/teacher/demo-reports/${encodeURIComponent(selectedReport.id)}/attribute`,
         {
           method: 'POST',
+          token: teacherToken,
           body: {
             strengths,
             weaknesses,
@@ -515,7 +700,7 @@ export function TeacherPortal({
   const handleImportPastPaper = async (e: React.FormEvent) => {
     e.preventDefault();
     setImportError('');
-    if (!paperFile) {
+    if (!paperFile || !teacherToken) {
       setImportError('Veuillez sélectionner un fichier PDF ou Word (.docx).');
       return;
     }
@@ -526,6 +711,7 @@ export function TeacherPortal({
         '/api/teacher/past-papers/import',
         {
           method: 'POST',
+          token: teacherToken,
           body: {
             teacherId,
             curriculum: paperCategory,
@@ -556,9 +742,11 @@ export function TeacherPortal({
   };
 
   const handleDeletePaper = async (paperId: string) => {
+    if (!teacherToken) return;
     try {
       await apiRequest(`/api/teacher/past-papers/${encodeURIComponent(paperId)}`, {
         method: 'DELETE',
+        token: teacherToken,
       });
       await onPapersUpdated?.();
       showToast('Past Paper supprimé du catalogue.');
@@ -579,6 +767,17 @@ export function TeacherPortal({
     URL.revokeObjectURL(url);
   };
 
+  const triggerA4Print = () => {
+    document.body.classList.add('printing-a4-sheet');
+    const cleanup = () => {
+      document.body.classList.remove('printing-a4-sheet');
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+    window.print();
+    setTimeout(cleanup, 1500);
+  };
+
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -593,10 +792,12 @@ export function TeacherPortal({
 
   const handleSaveTrainerProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!teacherToken) return;
     setSavingProfile(true);
     try {
       await apiRequest(`/api/teacher/profile/${teacherId}`, {
         method: 'PUT',
+        token: teacherToken,
         body: {
           name: profName,
           roleTitle: profRoleTitle,
@@ -622,24 +823,30 @@ export function TeacherPortal({
     }
   };
 
+  const unpaidAccountsCount = accounts.filter((a) => !a.hasPaidAccess).length;
+  const paidAccountsCount = accounts.filter((a) => a.hasPaidAccess).length;
+  const totalRevenueSar = accounts.reduce((acc, a) => acc + (a.paidTotalSar || 0), 0);
+
   const row1Tabs: { id: TeacherSubTab; label: string; badge?: number }[] = [
     { id: 'dashboard', label: 'Dashboard' },
+    { id: 'accounts', label: 'Comptes Élèves & Paiements', badge: unpaidAccountsCount },
     { id: 'demo-reports', label: 'Demo test reports', badge: pendingDemoReportsCount },
-    { id: 'tutoring-bookings', label: 'Private Meet bookings', badge: bookings.length },
+    { id: 'tutoring-bookings', label: 'Rapports Payés & Meet', badge: bookings.length },
+    { id: 'whiteboard', label: 'Tableau Interactif' },
     { id: 'weekly-mission', label: 'Weekly mission' },
     { id: 'students-codes', label: 'Students & codes' },
     { id: 'assign-skills', label: 'Assign skills' },
     { id: 'progress', label: 'Progress' },
-    { id: 'standards', label: 'Standards' },
-    { id: 'step', label: 'STEP prep' },
-    { id: 'gat', label: 'GAT prep' },
-    { id: 'nafes', label: 'NAFES prep' },
-    { id: 'ielts', label: 'IELTS prep' },
   ];
 
   const row2Tabs: { id: TeacherSubTab; label: string; badge?: number }[] = [
     { id: 'past-papers-admin', label: 'Importer Past Papers (HTML)', badge: papers.length },
     { id: 'profile-admin', label: 'Profil, Photo & Compétences' },
+    { id: 'standards', label: 'Standards' },
+    { id: 'step', label: 'STEP prep' },
+    { id: 'gat', label: 'GAT prep' },
+    { id: 'nafes', label: 'NAFES prep' },
+    { id: 'ielts', label: 'IELTS prep' },
     { id: 'phonics', label: 'Phonics' },
     { id: 'skill-builder', label: 'Skill builder' },
     { id: 'writing-review', label: 'Writing to review', badge: pendingWritingCount },
@@ -656,6 +863,187 @@ export function TeacherPortal({
     activeTab === 'skill-builder';
 
   const headerPhoto = activeTrainerObj?.photoUrl || TRAINER_FALLBACK_PHOTOS[teacherId];
+
+  // Private Gate: Require Server-Verified Teacher Login / First-Run Password Setup
+  if (!teacherToken) {
+    return (
+      <section className="max-w-lg mx-auto px-4 py-14">
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-md space-y-6">
+          <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
+            <div>
+              <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#0B6E8C] mb-1">
+                <Lock className="w-3.5 h-3.5" />
+                <span>Accès Privé Formateur · Non publié côté élève</span>
+              </div>
+              <h1 className="font-display text-2xl font-bold text-[#0F2537]">
+                {authChecking
+                  ? 'Vérification...'
+                  : !authConfigured
+                    ? 'Initialisation du Mot de Passe Formateur'
+                    : 'Connexion Espace Formateur'}
+              </h1>
+            </div>
+            {onExitTeacherMode && (
+              <button
+                type="button"
+                onClick={onExitTeacherMode}
+                className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-[#0F2537] border border-slate-200 rounded-lg cursor-pointer"
+              >
+                Site Élève
+              </button>
+            )}
+          </div>
+
+          {authError && (
+            <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-900">
+              {authError}
+            </div>
+          )}
+
+          {authChecking ? (
+            <p className="text-xs text-slate-500">Chargement de l’authentification...</p>
+          ) : !authConfigured ? (
+            <form onSubmit={handleTeacherSetup} className="space-y-4">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Première utilisation : définissez votre mot de passe administrateur privé pour protéger l’espace formateur (Mr. Marwan Mhamdi &amp; M. Mohamed Cherif).
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Identifiant Marwan
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={setupMarwanLogin}
+                    onChange={(e) => setSetupMarwanLogin(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Identifiant Mohamed
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={setupMohamedLogin}
+                    onChange={(e) => setSetupMohamedLogin(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Nouveau mot de passe privé (min. 6 caractères)
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={setupPassword}
+                  onChange={(e) => setSetupPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Confirmer le mot de passe
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={setupConfirm}
+                  onChange={(e) => setSetupConfirm(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={authSubmitting}
+                className="w-full py-3 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-sm font-semibold rounded-xl inline-flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                <span>{authSubmitting ? 'Activation...' : 'Créer l’accès privé formateur'}</span>
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleTeacherLogin} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Profil / Identifiant Formateur
+                </label>
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => setAuthLoginInput('rmarwan26@alekhaaschools.com')}
+                    className={`px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer ${
+                      authLoginInput.toLowerCase().includes('marwan')
+                        ? 'border-[#0B6E8C] bg-[#EEF5F9] text-[#0F2537]'
+                        : 'border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    Marwan Mhamdi
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAuthLoginInput('m.cherif@almajd-academy.sa')}
+                    className={`px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer ${
+                      authLoginInput.toLowerCase().includes('cherif') ||
+                      authLoginInput.toLowerCase().includes('mohamed')
+                        ? 'border-[#0B6E8C] bg-[#EEF5F9] text-[#0F2537]'
+                        : 'border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    Mohamed Cherif
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  required
+                  value={authLoginInput}
+                  onChange={(e) => setAuthLoginInput(e.target.value)}
+                  placeholder="rmarwan26@alekhaaschools.com ou m.cherif@almajd-academy.sa"
+                  className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Mot de passe privé {authUsesEnvPasscode ? '(TEACHER_PORTAL_PASSCODE)' : ''}
+                </label>
+                <div className="relative">
+                  <input
+                    type={authShowPassword ? 'text' : 'password'}
+                    required
+                    value={authPasswordInput}
+                    onChange={(e) => setAuthPasswordInput(e.target.value)}
+                    placeholder="Saisissez votre mot de passe formateur"
+                    className="w-full px-3.5 py-2.5 pe-10 text-sm border border-slate-300 rounded-xl"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setAuthShowPassword((v) => !v)}
+                    className="absolute inset-y-0 end-2.5 flex items-center text-slate-500 cursor-pointer"
+                  >
+                    {authShowPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={authSubmitting}
+                className="w-full py-3 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-sm font-semibold rounded-xl inline-flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <KeyRound className="w-4 h-4" />
+                <span>{authSubmitting ? 'Vérification...' : 'Entrer dans l’Espace Formateur'}</span>
+              </button>
+            </form>
+          )}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -681,30 +1069,53 @@ export function TeacherPortal({
           </div>
         </div>
 
-        {/* Clean Lead Teacher Switcher */}
-        <div className="inline-flex items-center gap-1 p-1 bg-white border border-slate-200 rounded-xl shadow-xs self-start sm:self-auto">
+        {/* Lead Teacher Switcher + Lock/Exit Controls */}
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          <div className="inline-flex items-center gap-1 p-1 bg-white border border-slate-200 rounded-xl shadow-xs">
+            <button
+              type="button"
+              onClick={() => setTeacherId('marwan')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                teacherId === 'marwan'
+                  ? 'bg-[#0B6E8C] text-white'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Mr. Marwan Mhamdi (EN)
+            </button>
+            <button
+              type="button"
+              onClick={() => setTeacherId('mohamed')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                teacherId === 'mohamed'
+                  ? 'bg-[#0B6E8C] text-white'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              M. Mohamed Cherif (FR / AR)
+            </button>
+          </div>
           <button
             type="button"
-            onClick={() => setTeacherId('marwan')}
-            className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-              teacherId === 'marwan'
-                ? 'bg-[#0B6E8C] text-white'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
+            onClick={() => {
+              setTeacherToken(null);
+              setAuthPasswordInput('');
+            }}
+            title="Verrouiller / Déconnexion Formateur"
+            className="px-3 py-2 bg-white border border-slate-300 hover:border-red-400 text-slate-700 hover:text-red-700 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
           >
-            Mr. Marwan Mhamdi (EN)
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Verrouiller</span>
           </button>
-          <button
-            type="button"
-            onClick={() => setTeacherId('mohamed')}
-            className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-              teacherId === 'mohamed'
-                ? 'bg-[#0B6E8C] text-white'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            M. Mohamed Cherif (FR / AR)
-          </button>
+          {onExitTeacherMode && (
+            <button
+              type="button"
+              onClick={onExitTeacherMode}
+              className="px-3 py-2 bg-slate-900 text-white rounded-xl text-xs font-semibold cursor-pointer"
+            >
+              Site Élève
+            </button>
+          )}
         </div>
       </div>
 
@@ -953,6 +1364,7 @@ export function TeacherPortal({
                     <th className="py-3 px-3 font-semibold">Student Code</th>
                     <th className="py-3 px-3 font-semibold">Parent Code</th>
                     <th className="py-3 px-3 font-semibold">Status</th>
+                    <th className="py-3 px-3 font-semibold">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-sm">
@@ -1026,6 +1438,16 @@ export function TeacherPortal({
                         >
                           {st.status}
                         </span>
+                      </td>
+                      <td className="py-3.5 px-3 whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRosterStudent(st.id)}
+                          className="p-1.5 text-slate-400 hover:text-red-700 rounded-lg cursor-pointer"
+                          title="Retirer de la liste"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -1862,15 +2284,204 @@ export function TeacherPortal({
                       </div>
                     ) : (
                       <span className="text-xs text-amber-800">
-                        Paiement confirmé — en attente de génération Google Meet depuis le compte élève.
+                        Paiement confirmé — prêt pour lancement Meet / Tableau.
                       </span>
                     )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWhiteboardSession({
+                          studentName: b.studentName,
+                          subject: `${b.curriculum} · ${b.subject}`,
+                          meetLink: b.meetLink || '',
+                        });
+                        setActiveTab('whiteboard');
+                      }}
+                      className="px-3.5 py-2 bg-[#0F2537] hover:bg-slate-800 text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <PenTool className="w-3.5 h-3.5" />
+                      <span>Ouvrir Tableau Interactif</span>
+                    </button>
                   </div>
                 </div>
               ))}
             </div>
           )}
         </div>
+      )}
+
+      {/* TAB: REGISTERED STUDENT ACCOUNTS & PAID STATUS (WITH UNPAID DELETION) */}
+      {activeTab === 'accounts' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
+              <div className="text-xs text-slate-500 mb-1">Total Comptes Inscrits</div>
+              <div className="font-mono text-2xl font-bold text-[#0F2537]">{accounts.length}</div>
+            </div>
+            <div className="bg-white border border-emerald-200 rounded-2xl p-5 shadow-xs">
+              <div className="text-xs text-emerald-700 mb-1">Élèves Payants</div>
+              <div className="font-mono text-2xl font-bold text-emerald-800">{paidAccountsCount}</div>
+            </div>
+            <div className="bg-white border border-amber-200 rounded-2xl p-5 shadow-xs">
+              <div className="text-xs text-amber-800 mb-1">Non Payés (Essai 30m)</div>
+              <div className="font-mono text-2xl font-bold text-amber-900">{unpaidAccountsCount}</div>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
+              <div className="text-xs text-slate-500 mb-1">Revenus Confirmés</div>
+              <div className="font-mono text-2xl font-bold text-[#0B6E8C]">{totalRevenueSar} SAR</div>
+            </div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-7 shadow-xs space-y-5">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+              <div>
+                <h2 className="font-display text-xl font-bold text-[#0F2537]">
+                  Gestion des Élèves Inscrits &amp; Paiements
+                </h2>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  Visualisez tous les élèves inscrits, leur statut payant ou essai gratuit, et supprimez les comptes qui n’ont pas payé.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  value={accountsSearch}
+                  onChange={(e) => setAccountsSearch(e.target.value)}
+                  placeholder="Rechercher nom ou email..."
+                  className="px-3 py-2 text-xs border border-slate-300 rounded-xl"
+                />
+                {(['all', 'paid', 'unpaid'] as const).map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => setAccountsFilter(f)}
+                    className={`px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer ${
+                      accountsFilter === f
+                        ? 'bg-[#0B6E8C] text-white'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    {f === 'all' ? 'Tous' : f === 'paid' ? 'Payés' : 'Non payés'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 text-[11px] uppercase tracking-wider text-slate-500">
+                    <th className="py-3 px-3">Élève</th>
+                    <th className="py-3 px-3">Parcours Verrouillé</th>
+                    <th className="py-3 px-3">Statut Paiement</th>
+                    <th className="py-3 px-3">Essai 30 min</th>
+                    <th className="py-3 px-3">Achats</th>
+                    <th className="py-3 px-3">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs">
+                  {accounts
+                    .filter((a) => {
+                      if (accountsFilter === 'paid' && !a.hasPaidAccess) return false;
+                      if (accountsFilter === 'unpaid' && a.hasPaidAccess) return false;
+                      if (accountsSearch.trim()) {
+                        const q = accountsSearch.toLowerCase();
+                        return (
+                          a.name.toLowerCase().includes(q) ||
+                          a.email.toLowerCase().includes(q) ||
+                          (a.lockedCurriculum || '').toLowerCase().includes(q)
+                        );
+                      }
+                      return true;
+                    })
+                    .map((acc) => (
+                      <tr key={acc.id} className="hover:bg-slate-50/70">
+                        <td className="py-3.5 px-3">
+                          <div className="font-semibold text-[#0F2537] text-sm">{acc.name}</div>
+                          <div className="text-slate-500">{acc.email}</div>
+                        </td>
+                        <td className="py-3.5 px-3">
+                          {acc.lockedCurriculum ? (
+                            <span className="px-2.5 py-1 rounded-lg bg-[#EEF5F9] text-[#0F2537] font-semibold">
+                              {(acc.lockedGrade || '').toUpperCase()} · {acc.lockedCurriculum}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">{acc.preferredTrack || 'Non verrouillé'}</span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-3">
+                          {acc.hasPaidAccess ? (
+                            <span className="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-900 font-semibold font-mono">
+                              Payé · {acc.paidTotalSar} SAR
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-lg bg-amber-100 text-amber-900 font-semibold">
+                              Non payé
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-3 font-mono text-slate-600 tabular-nums">
+                          {acc.hasPaidAccess
+                            ? 'Illimité'
+                            : acc.trialExpired
+                              ? 'Expiré (00:00)'
+                              : `${Math.ceil(acc.trialSecondsRemaining / 60)} min restantes`}
+                        </td>
+                        <td className="py-3.5 px-3 text-slate-600 tabular-nums">
+                          {acc.enrolledCoursesCount} cours · {acc.unlockedPapersCount} sujets ·{' '}
+                          {acc.paidBookingsCount} Meet
+                        </td>
+                        <td className="py-3.5 px-3 whitespace-nowrap">
+                          {acc.hasPaidAccess ? (
+                            <span className="text-[11px] font-semibold text-emerald-700">
+                              Protégé (Payant)
+                            </span>
+                          ) : confirmDeleteUserId === acc.id ? (
+                            <div className="inline-flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteUnpaidAccount(acc.id)}
+                                className="px-2.5 py-1 bg-red-700 text-white rounded-lg text-[11px] font-semibold cursor-pointer"
+                              >
+                                Confirmer
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteUserId(null)}
+                                className="px-2 py-1 border border-slate-300 rounded-lg text-[11px] cursor-pointer"
+                              >
+                                Annuler
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteUserId(acc.id)}
+                              className="px-2.5 py-1.5 border border-red-200 text-red-700 hover:bg-red-50 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>Supprimer (Non payé)</span>
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: INTERACTIVE WHITEBOARD FOR LIVE ONLINE SESSIONS */}
+      {activeTab === 'whiteboard' && (
+        <InteractiveWhiteboard
+          sessionStudentName={whiteboardSession?.studentName}
+          sessionSubject={whiteboardSession?.subject}
+          sessionMeetLink={whiteboardSession?.meetLink}
+          onCloseSessionBanner={() => setWhiteboardSession(null)}
+        />
       )}
 
       {/* TAB 7: WEEKLY REPORTS */}
@@ -2131,67 +2742,83 @@ export function TeacherPortal({
                   <span>Aperçu HTML fidèle à l’original</span>
                 </h3>
                 {importedResult && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleDownloadGeneratedHtml(
-                        importedResult.previewHtml,
-                        importedResult.paper.code
-                      )
-                    }
-                    className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold rounded-lg inline-flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Télécharger .html</span>
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={triggerA4Print}
+                      className="px-3 py-1.5 bg-[#0F2537] hover:bg-slate-800 text-white text-xs font-semibold rounded-lg inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      <span>Imprimer PDF A4</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleDownloadGeneratedHtml(
+                          importedResult.previewHtml,
+                          importedResult.paper.code
+                        )
+                      }
+                      className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold rounded-lg inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Télécharger .html</span>
+                    </button>
+                  </div>
                 )}
               </div>
 
               {!importedResult ? (
                 <div className="p-6 rounded-xl bg-[#F8FAFC] border border-slate-200 text-xs text-slate-600 leading-relaxed space-y-2">
                   <p>
-                    Une fois votre PDF ou Word traité par Gemini, l’examen exact s’affiche ici au format HTML prêt à l’achat par les élèves dans la catégorie choisie.
+                    Une fois votre PDF ou Word traité par Gemini, l’examen exact s’affiche ici au format HTML prêt à l’achat par les élèves dans la catégorie choisie, avec logo et couleurs du cursus et mise en page A4.
                   </p>
                   <p className="text-slate-500">
-                    Aucune question n’est inventée ni modifiée : le contenu est transcrit mot pour mot avec sa matière, sa date/année et ses barèmes.
+                    Les écritures mathématiques et scientifiques (puissances, indices, fractions, racines) sont automatiquement mises en forme officiellement.
                   </p>
                 </div>
-              ) : (
-                <div className="space-y-4 max-h-[540px] overflow-y-auto pe-1">
-                  <div className="p-4 rounded-xl bg-[#EEF5F9] border border-[#BFD8E6] space-y-1">
-                    <div className="text-[11px] font-mono font-semibold text-[#0B6E8C]">
-                      {importedResult.paper.code} · {importedResult.paper.curriculum} ·{' '}
-                      {importedResult.paper.subject} ·{' '}
-                      {importedResult.paper.examDate || importedResult.paper.year}
+              ) : (() => {
+                const impTheme = getExamBoardTheme(importedResult.paper.curriculum);
+                return (
+                <div className="a4-printable-document space-y-4 max-h-[560px] overflow-y-auto pe-1">
+                  <div className={`p-4 rounded-xl bg-gradient-to-r ${impTheme.headerGradientClass} text-white flex items-center gap-3`}>
+                    <div className="w-10 h-10 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center shrink-0">
+                      <ExamBoardCrestSvg curriculum={importedResult.paper.curriculum} className="w-6 h-6" />
                     </div>
-                    <div className="font-display text-base font-bold text-[#0F2537]">
-                      {importedResult.paper.title}
-                    </div>
-                    <div className="text-xs text-slate-600">
-                      {importedResult.paper.fullQuestions.length} question(s) exactes ·{' '}
-                      {importedResult.paper.priceSar} SAR
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-mono uppercase tracking-wider text-white/85">
+                        {impTheme.boardTitle} · {importedResult.paper.code} · {importedResult.paper.subject} · {importedResult.paper.examDate || importedResult.paper.year}
+                      </div>
+                      <div className="font-display text-base font-bold text-white truncate">
+                        <MathText text={importedResult.paper.title} />
+                      </div>
+                      <div className="text-xs text-white/90">
+                        {importedResult.paper.fullQuestions.length} question(s) exactes ·{' '}
+                        {importedResult.paper.priceSar} SAR
+                      </div>
                     </div>
                   </div>
 
                   {importedResult.paper.fullQuestions.map((q) => (
                     <div
                       key={q.number}
-                      className="p-4 rounded-xl border border-slate-200 bg-[#F8FAFC] space-y-2"
+                      className="a4-avoid-break p-4 rounded-xl border border-slate-200 bg-[#F8FAFC] space-y-2"
                     >
                       <div className="flex items-center justify-between text-xs font-mono text-slate-500">
-                        <span>Question {q.number}</span>
+                        <span className="font-bold text-[#0F2537]">Question {q.number}</span>
                         <span>{q.marks} pts</span>
                       </div>
                       <p className="text-xs font-medium text-slate-900 whitespace-pre-wrap leading-relaxed">
-                        {q.prompt}
+                        <MathText text={q.prompt} />
                       </p>
                       <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-950 whitespace-pre-wrap">
-                        <strong>Correction :</strong> {q.markScheme}
+                        <strong>Correction :</strong> <MathText text={q.markScheme} />
                       </div>
                     </div>
                   ))}
                 </div>
-              )}
+                );
+              })()}
             </div>
           </div>
 
@@ -2521,6 +3148,25 @@ export function TeacherPortal({
                 >
                   + Ajouter
                 </button>
+              </div>
+              <div className="pt-1">
+                <div className="text-[11px] text-slate-500 mb-1.5">
+                  Suggestions rapides pour {teacherId === 'marwan' ? 'Marwan Mhamdi' : 'Mohamed Cherif'} :
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {CURATED_SKILLS_BY_TEACHER[teacherId]
+                    .filter((sk) => !profSkills.includes(sk))
+                    .map((sk) => (
+                      <button
+                        key={sk}
+                        type="button"
+                        onClick={() => setProfSkills((prev) => [...prev, sk])}
+                        className="px-2.5 py-1 rounded-lg border border-dashed border-slate-300 hover:border-[#0B6E8C] text-[11px] text-slate-700 cursor-pointer"
+                      >
+                        + {sk}
+                      </button>
+                    ))}
+                </div>
               </div>
             </div>
           </div>

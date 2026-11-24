@@ -343,7 +343,7 @@ export function ExamPrepHubs({
     setEssaySuccess('');
     setSubmittingEssay(true);
     try {
-      await apiRequest('/api/teacher/writing/submit', {
+      await apiRequest('/api/writing/submit', {
         method: 'POST',
         body: {
           teacherId,

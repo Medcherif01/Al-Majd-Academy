@@ -39,7 +39,9 @@ export type TeacherSubTab =
   | 'writing-review'
   | 'weekly-reports'
   | 'past-papers-admin'
-  | 'profile-admin';
+  | 'profile-admin'
+  | 'whiteboard'
+  | 'accounts';
 
 export type CurriculumKey =
   | 'all'
@@ -354,4 +356,25 @@ export interface GeneratedExam {
 export interface ProgressState {
   completedLessonIds: string[];
   quizScores: Record<string, number>;
+}
+
+export interface RegisteredStudentSummary {
+  id: string;
+  name: string;
+  email: string;
+  role: 'student' | 'parent';
+  preferredTrack: string;
+  lockedGrade: string | null;
+  lockedCurriculum: string | null;
+  hasPaidAccess: boolean;
+  hasAllAccessPass: boolean;
+  enrolledCoursesCount: number;
+  unlockedPapersCount: number;
+  paidBookingsCount: number;
+  paidTotalSar: number;
+  trialStartedAt: string | null;
+  trialSecondsRemaining: number;
+  trialExpired: boolean;
+  assignedSkills: string[];
+  createdAt: string;
 }

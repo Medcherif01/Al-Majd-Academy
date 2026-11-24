@@ -81,3 +81,53 @@
   width: 18px;
   min-width: 18px;
 }
+
+@page {
+  size: A4 portrait;
+  margin: 14mm;
+}
+
+@media print {
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .no-a4-print {
+    display: none !important;
+  }
+
+  body.printing-a4-sheet header,
+  body.printing-a4-sheet footer,
+  body.printing-a4-sheet nav {
+    display: none !important;
+  }
+
+  body.printing-a4-sheet * {
+    visibility: hidden;
+  }
+
+  body.printing-a4-sheet .a4-printable-document,
+  body.printing-a4-sheet .a4-printable-document * {
+    visibility: visible !important;
+  }
+
+  body.printing-a4-sheet .a4-printable-document {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+  }
+
+  .a4-avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

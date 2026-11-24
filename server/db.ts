@@ -455,6 +455,16 @@ const TrainerProfileSchema = new Schema(
   { timestamps: true }
 );
 
+const TeacherCredentialSchema = new Schema(
+  {
+    teacherId: { type: String, enum: ['marwan', 'mohamed'], required: true, unique: true },
+    loginAliases: { type: [String], default: [] },
+    passwordHash: { type: String, required: true },
+    salt: { type: String, required: true },
+  },
+  { timestamps: true }
+);
+
 const RosterStudentModel: Model<any> =
   mongoose.models.RosterStudent || mongoose.model('RosterStudent', RosterStudentSchema);
 const WeeklyMissionModel: Model<any> =
@@ -467,6 +477,17 @@ const PastPaperModel: Model<any> =
   mongoose.models.PastPaper || mongoose.model('PastPaper', PastPaperSchema);
 const TrainerProfileModel: Model<any> =
   mongoose.models.TrainerProfile || mongoose.model('TrainerProfile', TrainerProfileSchema);
+const TeacherCredentialModel: Model<any> =
+  mongoose.models.TeacherCredential || mongoose.model('TeacherCredential', TeacherCredentialSchema);
+
+export interface TeacherCredentialRecord {
+  teacherId: 'marwan' | 'mohamed';
+  loginAliases: string[];
+  passwordHash: string;
+  salt: string;
+}
+
+const memoryTeacherCredentials = new Map<'marwan' | 'mohamed', TeacherCredentialRecord>();
 
 // Cached connection for Vercel serverless cold-starts
 let connectionPromise: Promise<boolean> | null = null;
@@ -1753,5 +1774,134 @@ export const db = {
     if (idx === -1) return null;
     memoryTrainers[idx] = { ...memoryTrainers[idx], ...updates, id };
     return memoryTrainers[idx];
+  },
+
+  // --- Private Teacher Credentials & Unpaid Student Management ---
+  async hasAnyTeacherCredentials(): Promise<boolean> {
+    if (await connectDatabase()) {
+      const count = await TeacherCredentialModel.countDocuments();
+      return count > 0;
+    }
+    return memoryTeacherCredentials.size > 0;
+  },
+
+  async getTeacherCredentials(): Promise<TeacherCredentialRecord[]> {
+    if (await connectDatabase()) {
+      const docs = await TeacherCredentialModel.find({}).lean();
+      return docs.map((d: any) => ({
+        teacherId: d.teacherId,
+        loginAliases: Array.isArray(d.loginAliases) ? d.loginAliases : [],
+        passwordHash: d.passwordHash,
+        salt: d.salt,
+      }));
+    }
+    return Array.from(memoryTeacherCredentials.values());
+  },
+
+  async saveTeacherCredential(cred: TeacherCredentialRecord): Promise<void> {
+    const cleanAliases = Array.from(
+      new Set(cred.loginAliases.map((a) => a.trim().toLowerCase()).filter(Boolean))
+    );
+    if (await connectDatabase()) {
+      await TeacherCredentialModel.findOneAndUpdate(
+        { teacherId: cred.teacherId },
+        {
+          $set: {
+            loginAliases: cleanAliases,
+            passwordHash: cred.passwordHash,
+            salt: cred.salt,
+          },
+        },
+        { upsert: true, new: true }
+      );
+      return;
+    }
+    memoryTeacherCredentials.set(cred.teacherId, {
+      ...cred,
+      loginAliases: cleanAliases,
+    });
+  },
+
+  async getAllUsers(): Promise<UserRecord[]> {
+    if (await connectDatabase()) {
+      const docs = await UserModel.find({}).sort({ createdAt: -1 }).lean();
+      return docs.map(mapUserDoc);
+    }
+    return Array.from(memoryUsers.values()).sort(
+      (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)
+    );
+  },
+
+  async getAllOrders(): Promise<OrderRecord[]> {
+    if (await connectDatabase()) {
+      const docs = await OrderModel.find({}).sort({ createdAt: -1 }).lean();
+      return docs.map((d: any) => ({
+        id: String(d._id),
+        userId: d.userId,
+        customerEmail: d.customerEmail,
+        items: d.items || [],
+        isAllAccessPass: Boolean(d.isAllAccessPass),
+        totalSar: d.totalSar,
+        paymentMethod: d.paymentMethod,
+        referenceCode: d.referenceCode,
+        status: d.status || 'paid',
+        createdAt: new Date(d.createdAt).toISOString(),
+      }));
+    }
+    return memoryOrders;
+  },
+
+  async deleteUnpaidUser(userId: string): Promise<'deleted' | 'paid_protected' | 'not_found'> {
+    const user = await this.findUserById(userId);
+    if (!user) return 'not_found';
+
+    const userOrders = await this.getOrdersByUser(userId);
+    const userBookings = await this.getBookingsByUser(userId);
+    const hasPaid =
+      user.hasAllAccessPass ||
+      user.enrolledCourses.length > 0 ||
+      user.unlockedPapers.length > 0 ||
+      userOrders.some((o) => o.status === 'paid' && o.totalSar > 0) ||
+      userBookings.some((b) => b.paid);
+
+    if (hasPaid) {
+      return 'paid_protected';
+    }
+
+    if (await connectDatabase()) {
+      await Promise.all([
+        UserModel.deleteOne({ _id: userId }),
+        PlacementResultModel.deleteMany({ userId }),
+        ProgressModel.deleteMany({ userId }),
+        GeneratedExamModel.deleteMany({ userId }),
+        DemoReportModel.deleteMany({ userId }),
+      ]);
+      return 'deleted';
+    }
+
+    memoryUsers.delete(userId);
+    memoryProgress.delete(userId);
+    for (let i = memoryPlacements.length - 1; i >= 0; i--) {
+      if (memoryPlacements[i].userId === userId) memoryPlacements.splice(i, 1);
+    }
+    for (let i = memoryExams.length - 1; i >= 0; i--) {
+      if (memoryExams[i].userId === userId) memoryExams.splice(i, 1);
+    }
+    for (let i = memoryDemoReports.length - 1; i >= 0; i--) {
+      if (memoryDemoReports[i].userId === userId) memoryDemoReports.splice(i, 1);
+    }
+    return 'deleted';
+  },
+
+  async deleteRosterStudent(id: string): Promise<boolean> {
+    if (await connectDatabase()) {
+      if (!mongoose.isValidObjectId(id)) return false;
+      const res = await RosterStudentModel.deleteOne({ _id: id });
+      return (res.deletedCount || 0) > 0;
+    }
+    const idx = memoryRoster.findIndex((s) => s.id === id);
+    if (idx === -1) return false;
+    memoryRoster.splice(idx, 1);
+    return true;
   },
 };

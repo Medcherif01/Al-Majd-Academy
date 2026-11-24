@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import { CreditCard, Download, Eye, Lock, ShieldCheck, Unlock, X } from 'lucide-react';
+import { CreditCard, Download, Eye, Lock, Printer, ShieldCheck, Unlock, X } from 'lucide-react';
 import { apiRequest, downloadProtectedPaper } from '../utils/api';
+import { ExamBoardCrestSvg, getExamBoardTheme } from '../utils/examBoardThemes';
+import { MathText } from '../utils/mathFormat';
 import { TRANSLATIONS } from '../i18n/translations';
 import type { FullPastPaper, PastPaperSummary, UiLanguage, UserProfile } from '../types/academy';
 
@@ -118,6 +120,17 @@ export function PastPapersVault({
     }
   };
 
+  const triggerA4Print = () => {
+    document.body.classList.add('printing-a4-sheet');
+    const cleanup = () => {
+      document.body.classList.remove('printing-a4-sheet');
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+    window.print();
+    setTimeout(cleanup, 1500);
+  };
+
   return (
     <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14">
       <div className="mb-8 max-w-3xl">
@@ -205,49 +218,62 @@ export function PastPapersVault({
 
       {/* Past Papers Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {visiblePapers.map((paper) => (
-          <article
-            key={paper.id}
-            className="bg-white border border-slate-200 rounded-xl p-6 flex flex-col justify-between"
-            dir={paper.language === 'العربية' ? 'rtl' : 'ltr'}
-          >
-            <div>
-              <div className="text-xs font-medium text-slate-500 mb-2 tabular-nums flex flex-wrap items-center gap-1.5">
-                <span className="font-mono text-emerald-800 font-semibold">{paper.code}</span>
-                <span>·</span>
-                <span>{paper.curriculum}</span>
-                <span>·</span>
-                <span className="font-semibold text-[#0F2537]">{paper.subject}</span>
-                <span>·</span>
-                <span>{paper.examDate || paper.year}</span>
-              </div>
-
-              <h3 className="font-display text-lg font-semibold text-slate-900 leading-snug mb-2">
-                {paper.title}
-              </h3>
-
-              <div className="text-xs text-slate-600 mb-3 tabular-nums">
-                <span>{paper.session}</span>
-                <span className="mx-1.5">·</span>
-                <span>{paper.duration}</span>
-                <span className="mx-1.5">·</span>
-                <span>{paper.pages} pages</span>
-                <span className="mx-1.5">·</span>
-                <span className="font-mono text-[#0B6E8C] font-semibold">HTML</span>
-              </div>
-
-              {paper.uploadedByTeacherName && (
-                <div className="text-[11px] font-medium text-[#0B6E8C] mb-2">
-                  Publié par : {paper.uploadedByTeacherName}
+        {visiblePapers.map((paper) => {
+          const theme = getExamBoardTheme(paper.curriculum);
+          return (
+            <article
+              key={paper.id}
+              className="bg-white border border-slate-200 rounded-2xl overflow-hidden flex flex-col justify-between shadow-xs hover:shadow-md transition-shadow"
+              dir={paper.language === 'العربية' ? 'rtl' : 'ltr'}
+            >
+              <div>
+                <div className={`bg-gradient-to-r ${theme.headerGradientClass} text-white px-5 py-3.5 flex items-center justify-between gap-3`}>
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-9 h-9 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center shrink-0 text-white">
+                      <ExamBoardCrestSvg curriculum={paper.curriculum} className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-mono text-[10px] font-bold tracking-wider uppercase text-white/90 truncate">
+                        {theme.shortTag} · {paper.code}
+                      </div>
+                      <div className="text-xs font-semibold text-white truncate">{paper.subject}</div>
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded bg-white/15 font-mono text-[11px] font-bold shrink-0">
+                    {paper.examDate || paper.year}
+                  </span>
                 </div>
-              )}
 
-              <p className="text-xs text-slate-600 leading-relaxed mb-5 line-clamp-3">
-                {paper.officialRuleSummary}
-              </p>
-            </div>
+                <div className="p-6 pb-4">
+                  <h3 className="font-display text-lg font-semibold text-slate-900 leading-snug mb-2">
+                    <MathText text={paper.title} />
+                  </h3>
 
-            <div className="pt-4 border-t border-slate-100 space-y-3">
+                  <div className="text-xs text-slate-600 mb-3 tabular-nums flex flex-wrap items-center gap-1.5">
+                    <span>{paper.session}</span>
+                    <span>·</span>
+                    <span>{paper.duration}</span>
+                    <span>·</span>
+                    <span>{paper.pages} pages</span>
+                    <span>·</span>
+                    <span className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-bold ${theme.bgTintClass} text-[#0F2537]`}>
+                      HTML + A4 PDF
+                    </span>
+                  </div>
+
+                  {paper.uploadedByTeacherName && (
+                    <div className="text-[11px] font-medium text-[#0B6E8C] mb-2">
+                      Publié par : {paper.uploadedByTeacherName}
+                    </div>
+                  )}
+
+                  <p className="text-xs text-slate-600 leading-relaxed mb-2 line-clamp-3">
+                    <MathText text={paper.officialRuleSummary} />
+                  </p>
+                </div>
+              </div>
+
+              <div className="px-6 pb-6 pt-4 border-t border-slate-100 space-y-3">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-slate-500">
                   {paper.isUnlocked ? (
@@ -314,7 +340,8 @@ export function PastPapersVault({
               </div>
             </div>
           </article>
-        ))}
+          );
+        })}
       </div>
 
       {/* Free Q1 Preview Modal */}
@@ -345,7 +372,7 @@ export function PastPapersVault({
             </h3>
 
             <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700 mb-5 leading-relaxed">
-              <strong>{t.examRulesTitle}:</strong> {previewPaper.officialRuleSummary}
+              <strong>{t.examRulesTitle}:</strong> <MathText text={previewPaper.officialRuleSummary} />
             </div>
 
             <div className="space-y-4">
@@ -354,7 +381,7 @@ export function PastPapersVault({
                 <span>{previewPaper.freePreview.marks} marks</span>
               </div>
               <p className="text-base font-medium text-slate-900 leading-relaxed">
-                {previewPaper.freePreview.prompt}
+                <MathText text={previewPaper.freePreview.prompt} />
               </p>
 
               <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-200 space-y-2 text-sm">
@@ -362,10 +389,10 @@ export function PastPapersVault({
                   Official Mark Scheme / Correction Officielle
                 </div>
                 <p className="text-slate-800 leading-relaxed">
-                  {previewPaper.freePreview.markScheme}
+                  <MathText text={previewPaper.freePreview.markScheme} />
                 </p>
                 <p className="text-xs text-slate-600">
-                  <strong>Examiner Note:</strong> {previewPaper.freePreview.examinerNote}
+                  <strong>Examiner Note:</strong> <MathText text={previewPaper.freePreview.examinerNote} />
                 </p>
               </div>
             </div>
@@ -400,65 +427,87 @@ export function PastPapersVault({
         </div>
       )}
 
-      {/* Full Unlocked Paper Reader Modal */}
-      {fullPaperModal && (
+      {/* Full Unlocked Paper Reader Modal (with A4 Printable Sheet) */}
+      {fullPaperModal && (() => {
+        const modalTheme = getExamBoardTheme(fullPaperModal.curriculum);
+        return (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4"
           role="dialog"
           aria-modal="true"
         >
           <div
-            className="bg-white border border-slate-200 rounded-xl max-w-3xl w-full p-6 sm:p-8 shadow-xl relative max-h-[90vh] overflow-y-auto"
+            className="a4-printable-document bg-white border border-slate-200 rounded-2xl max-w-4xl w-full p-6 sm:p-8 shadow-xl relative max-h-[90vh] overflow-y-auto"
             dir={fullPaperModal.language === 'العربية' ? 'rtl' : 'ltr'}
           >
             <button
               type="button"
               onClick={() => setFullPaperModal(null)}
               aria-label="Fermer"
-              className="absolute top-4 end-4 p-2 text-slate-500 hover:text-slate-900 rounded-lg"
+              className="no-a4-print absolute top-4 end-4 p-2 text-white/80 hover:text-white rounded-lg cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <div className="text-xs font-mono text-emerald-800 mb-1">
-              {fullPaperModal.code} · {fullPaperModal.curriculum} · {fullPaperModal.subject} ·{' '}
-              {fullPaperModal.examDate || fullPaperModal.year}
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-4 border-b border-slate-200">
-              <h3 className="font-display text-2xl font-semibold text-slate-900">
-                {fullPaperModal.title}
-              </h3>
-              <button
-                type="button"
-                onClick={() => handleDownload(fullPaperModal)}
-                className="px-4 py-2 bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-semibold rounded-lg inline-flex items-center gap-1.5 cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Télécharger en HTML (.html)</span>
-              </button>
+            <div className={`bg-gradient-to-r ${modalTheme.headerGradientClass} text-white rounded-xl p-5 sm:p-6 mb-5 flex flex-wrap items-center justify-between gap-4`}>
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center shrink-0">
+                  <ExamBoardCrestSvg curriculum={fullPaperModal.curriculum} className="w-7 h-7" />
+                </div>
+                <div>
+                  <div className="text-[11px] font-mono uppercase tracking-wider text-white/90">
+                    {modalTheme.boardTitle} · {fullPaperModal.code}
+                  </div>
+                  <h3 className="font-display text-xl sm:text-2xl font-bold text-white leading-tight">
+                    <MathText text={fullPaperModal.title} />
+                  </h3>
+                  <div className="text-xs text-white/90 mt-1">
+                    {fullPaperModal.curriculum} · {fullPaperModal.subject} · {fullPaperModal.examDate || fullPaperModal.year} · {fullPaperModal.duration}
+                  </div>
+                </div>
+              </div>
+
+              <div className="no-a4-print flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={triggerA4Print}
+                  className="px-3.5 py-2 bg-white text-[#0F2537] hover:bg-slate-100 text-xs font-semibold rounded-lg inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Imprimer PDF A4</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDownload(fullPaperModal)}
+                  className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold rounded-lg inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Télécharger (.html)</span>
+                </button>
+              </div>
             </div>
 
-            <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700 mb-5 leading-relaxed">
-              <strong>{t.examRulesTitle} :</strong> {fullPaperModal.officialRuleSummary}
+            <div className={`p-3.5 rounded-lg ${modalTheme.bgTintClass} border ${modalTheme.borderClass} text-xs text-slate-800 mb-5 leading-relaxed`}>
+              <strong>{t.examRulesTitle} :</strong> <MathText text={fullPaperModal.officialRuleSummary} />
             </div>
 
             <div className="space-y-6">
               {fullPaperModal.fullQuestions.map((q) => (
-                <div key={q.number} className="pb-5 border-b border-slate-200 last:border-b-0">
+                <div key={q.number} className="a4-avoid-break pb-5 border-b border-slate-200 last:border-b-0">
                   <div className="flex items-center justify-between text-xs font-mono text-slate-500 mb-2">
-                    <span>Question {q.number}</span>
-                    <span>{q.marks} marks</span>
+                    <span className="font-bold text-[#0F2537]">Question {q.number}</span>
+                    <span>{q.marks} pts</span>
                   </div>
                   <p className="text-sm font-medium text-slate-900 mb-3 leading-relaxed whitespace-pre-wrap">
-                    {q.prompt}
+                    <MathText text={q.prompt} />
                   </p>
                   <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-200 text-xs sm:text-sm space-y-1.5">
-                    <div className="font-semibold text-emerald-900">Mark Scheme / Correction</div>
+                    <div className="font-semibold text-emerald-900">Mark Scheme / Correction Officielle</div>
                     <p className="text-slate-800 leading-relaxed whitespace-pre-wrap">
-                      {q.markScheme}
+                      <MathText text={q.markScheme} />
                     </p>
                     <p className="text-slate-600 text-xs">
-                      <strong>Examiner Note:</strong> {q.examinerNote}
+                      <strong>Examiner Note:</strong> <MathText text={q.examinerNote} />
                     </p>
                   </div>
                 </div>
@@ -466,7 +515,8 @@ export function PastPapersVault({
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Paid Checkout Modal */}
       {checkoutTarget && (
