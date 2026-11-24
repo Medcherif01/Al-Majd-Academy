@@ -1816,6 +1816,34 @@ export const db = {
       if (docs.length === 0) {
         await TeacherCredentialModel.insertMany(DEFAULT_TEACHER_CREDENTIALS);
         docs = await TeacherCredentialModel.find({}).lean();
+      } else {
+        let needsReload = false;
+        for (const def of DEFAULT_TEACHER_CREDENTIALS) {
+          const existing: any = docs.find((d: any) => d.teacherId === def.teacherId);
+          const primaryAlias = def.loginAliases[0];
+          if (!existing) {
+            await TeacherCredentialModel.create(def);
+            needsReload = true;
+          } else if (
+            !Array.isArray(existing.loginAliases) ||
+            !existing.loginAliases.includes(primaryAlias)
+          ) {
+            await TeacherCredentialModel.findOneAndUpdate(
+              { teacherId: def.teacherId },
+              {
+                $set: {
+                  loginAliases: def.loginAliases,
+                  passwordHash: def.passwordHash,
+                  salt: def.salt,
+                },
+              }
+            );
+            needsReload = true;
+          }
+        }
+        if (needsReload) {
+          docs = await TeacherCredentialModel.find({}).lean();
+        }
       }
       return docs.map((d: any) => ({
         teacherId: d.teacherId,

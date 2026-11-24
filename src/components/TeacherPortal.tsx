@@ -1047,7 +1047,10 @@ export function TeacherPortal({
                 <div className="grid grid-cols-2 gap-2 mb-2">
                   <button
                     type="button"
-                    onClick={() => setAuthLoginInput('Marwen05')}
+                    onClick={() => {
+                      setAuthLoginInput('Marwen05');
+                      setAuthError('');
+                    }}
                     className={`px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer ${
                       authLoginInput.toLowerCase().includes('marw')
                         ? 'border-[#0B6E8C] bg-[#EEF5F9] text-[#0F2537]'
@@ -1058,7 +1061,10 @@ export function TeacherPortal({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setAuthLoginInput('med01')}
+                    onClick={() => {
+                      setAuthLoginInput('med01');
+                      setAuthError('');
+                    }}
                     className={`px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer ${
                       authLoginInput.toLowerCase().includes('med') ||
                       authLoginInput.toLowerCase().includes('cherif') ||
