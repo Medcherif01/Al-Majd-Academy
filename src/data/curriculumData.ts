@@ -237,6 +237,43 @@ export const COURSE_MODULES: CourseModule[] = [
           explanation: 'Gradient = change in speed / change in time = acceleration (m/s^2).',
         },
       },
+      {
+        id: 'igcse-l2',
+        order: '02',
+        title: 'Thermal Capacity, Waves & Paper 6 Alternative to Practical Mastery',
+        durationMin: 45,
+        officialRuleFocus:
+          'CAIE Paper 6 awards recurring marks for citing eye-level parallax reading, repeating measurements to average, and controlling ambient heat loss.',
+        concepts: [
+          'Specific heat capacity E = mcΔT with insulated beaker energy-loss precautions.',
+          'Wave equation v = fλ and Snell’s law n = sin(i)/sin(r) with ray-box accuracy.',
+          'Justification of experimental uncertainty and plotting lines of best fit.',
+        ],
+        workedExample: {
+          problem:
+            '2.0 kg of water (c = 4200 J/kg°C) is heated from 22°C to 72°C. Calculate the thermal energy absorbed.',
+          solutionSteps: [
+            'Step 1: State formula E = m * c * ΔT.',
+            'Step 2: ΔT = 72 - 22 = 50°C.',
+            'Step 3: E = 2.0 * 4200 * 50 = 4.2 x 10^5 J (2 sig figs).',
+          ],
+        },
+        resourceChecklist: [
+          'Paper 6 ATP Full Experiment Checklist',
+          'CAIE Wave & Optics Ray Diagram Bank',
+        ],
+        checkpoint: {
+          question: 'Which precaution minimizes parallax error when reading a measuring cylinder in Paper 6?',
+          options: [
+            'Read from above the liquid surface',
+            'Position eye level with the bottom of the meniscus',
+            'Use a wider beaker',
+            'Heat the cylinder slightly',
+          ],
+          correctIndex: 1,
+          explanation: 'Reading perpendicularly at the bottom of the meniscus eliminates parallax error.',
+        },
+      },
     ],
   },
   {
@@ -290,6 +327,38 @@ export const COURSE_MODULES: CourseModule[] = [
           explanation: 'مقدار الزيادة = 20 ريالاً. نسبة الزيادة = (20 ÷ 80) × 100% = 25%.',
         },
       },
+      {
+        id: 'nafes-l2',
+        order: '02',
+        title: 'الاستقصاء العلمي، المتغيرات التجريبية، وتحليل البيانات في نافس (ETEC)',
+        durationMin: 40,
+        officialRuleFocus:
+          'تختبر نماذج نافس الوطنية قدرة الطالب على التمييز بين المتغير المستقل والتابع والضابط، واستنتاج العلاقات من الرسوم البيانية.',
+        concepts: [
+          'المتغير المستقل: العامل الذي يغيره الباحث عن قصد لاختبار أثره.',
+          'المتغير التابع: النتيجة القابلة للقياس والملاحظة أثناء التجربة.',
+          'حساب المتوسط الحسابي المرجح وقراءة التمثيل بالأعمدة المزدوجة.',
+        ],
+        workedExample: {
+          problem:
+            'قاست طالبة سرعة ذوبان السكر عند درجات حرارة 20°م و40°م و60°م مع تثبيت كمية الماء وحجم السكر. حدد المتغير المستقل والتابع.',
+          solutionSteps: [
+            'الخطوة 1: المتغير الذي تغير عمداً هو درجة حرارة الماء (المتغير المستقل).',
+            'الخطوة 2: المتغير المقاس كنتيجة هو زمن الذوبان (المتغير التابع).',
+            'الخطوة 3: كمية الماء وكتلة السكر عوامل ثابتة (ضابطة).',
+          ],
+        },
+        resourceChecklist: [
+          'بنك أسئلة الاستقصاء العلمي المعتمد من ETEC',
+          'نماذج تدريبية شاملة — الصف الثالث متوسط والسادس الابتدائي',
+        ],
+        checkpoint: {
+          question: 'الوسط الحسابي لأربعة أعداد هو 15. إذا أضيف عدد خامس فأصبح الوسط 17، فما قيمة العدد الخامس؟',
+          options: ['20', '25', '22', '17'],
+          correctIndex: 1,
+          explanation: 'المجموع قبل الإضافة = 4 × 15 = 60. المجموع بعد الإضافة = 5 × 17 = 85. العدد الخامس = 85 - 60 = 25.',
+        },
+      },
     ],
   },
   {
@@ -341,6 +410,37 @@ export const COURSE_MODULES: CourseModule[] = [
           options: ['4.5 ساعات', '2 ساعة', '3 ساعات', '1.5 ساعة'],
           correctIndex: 1,
           explanation: 'حاصل الضرب ÷ المجموع = (6 × 3) ÷ (6 + 3) = 18 ÷ 9 = ساعتان.',
+        },
+      },
+      {
+        id: 'qiyas-l2',
+        order: '02',
+        title: 'استراتيجيات اللفظي (التناظر والخطأ السياقي) والهندسة التحليلية في التحصيلي',
+        durationMin: 50,
+        officialRuleFocus:
+          'يتطلب اختبار قياس ربط اتجاه العلاقة في التناظر اللفظي بدقة، مع إتقان زوايا المثلثات والدوائر وقوانين القطوع في التحصيلي.',
+        concepts: [
+          'تحديد اتجاه العلاقة اللفظية (السبب والنتيجة، الأداة وصاحبها، الجزء والكل).',
+          'حساب الزوايا المحيطية والمركزية ومتباينة المثلث في أقل من 30 ثانية.',
+          'تطبيقات الدوال التربيعية والمصفوفات في القسم التحصيلي العلمي.',
+        ],
+        workedExample: {
+          problem:
+            'اختر التناظر المماثل لعلاقة (غمد : سيف).',
+          solutionSteps: [
+            'الخطوة 1: نحدد نوع العلاقة: الغمد هو مكان حفظ السيف (مكان : شيء).',
+            'الخطوة 2: نختبر الخيار (عرين : أسد) — العرين مسكن الأسد وبنفس الترتيب من اليمين لليسار.',
+          ],
+        },
+        resourceChecklist: [
+          'أهم 200 علاقة في التناظر اللفظي والخطأ السياقي',
+          'ملخص قوانين التحصيلي في الرياضيات والفيزياء',
+        ],
+        checkpoint: {
+          question: 'إذا كانت زوايا مثلث هي 2س، 3س، 4س، فما قياس أكبر زاوية فيه؟',
+          options: ['60°', '80°', '90°', '100°'],
+          correctIndex: 1,
+          explanation: 'مجموع الزوايا 9س = 180° => س = 20°. أكبر زاوية = 4 × 20° = 80°.',
         },
       },
     ],
@@ -401,6 +501,37 @@ export const COURSE_MODULES: CourseModule[] = [
           correctIndex: 1,
           explanation:
             'La continuité garantit l’existence d’au moins une solution ; seule la stricte monotonie garantit l’unicité.',
+        },
+      },
+      {
+        id: 'bac-l2',
+        order: '02',
+        title: 'Logarithme Népérien, Intégration par Parties & Probabilités Conditionnelles',
+        durationMin: 50,
+        officialRuleFocus:
+          'Au Baccalauréat AEFE, chaque probabilité conditionnelle doit être justifiée par un arbre pondéré proprement annoté ou la formule des probabilités totales.',
+        concepts: [
+          'Propriétés algébriques de ln(x) et croissances comparées lim ln(x)/x = 0.',
+          'Intégration par parties et calcul d’aire entre deux courbes.',
+          'Arbres pondérés, formule des probabilités totales et loi binomiale B(n, p).',
+        ],
+        workedExample: {
+          problem:
+            'On donne P(A) = 0,4 et P_A(B) = 0,7. Calculer P(A ∩ B).',
+          solutionSteps: [
+            '1. On applique la définition de la probabilité conditionnelle : P(A ∩ B) = P(A) × P_A(B).',
+            '2. Application numérique : P(A ∩ B) = 0,4 × 0,7 = 0,28.',
+          ],
+        },
+        resourceChecklist: [
+          'Annales corrigées Centres Étrangers / Arabie Saoudite',
+          'Méthode Rédaction Probabilités & Loi Binomiale',
+        ],
+        checkpoint: {
+          question: 'Sur ]0 ; +∞[, quelle est la solution de ln(x) + ln(2) = ln(10) ?',
+          options: ['x = 8', 'x = 5', 'x = 12', 'x = 20'],
+          correctIndex: 1,
+          explanation: 'ln(2x) = ln(10) => 2x = 10 => x = 5.',
         },
       },
     ],

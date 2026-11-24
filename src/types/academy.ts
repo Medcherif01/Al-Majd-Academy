@@ -23,6 +23,8 @@ export type PrepHubTab =
 
 export type TeacherSubTab =
   | 'dashboard'
+  | 'demo-reports'
+  | 'tutoring-bookings'
   | 'weekly-mission'
   | 'students-codes'
   | 'assign-skills'
@@ -92,12 +94,54 @@ export interface WritingSubmission {
   createdAt: string;
 }
 
+export interface DemoReport {
+  id: string;
+  userId: string;
+  teacherId: 'marwan' | 'mohamed';
+  studentName: string;
+  studentEmail: string;
+  gradeLevel: string;
+  curriculum: string;
+  language: 'Français' | 'English' | 'العربية';
+  overallScore: number;
+  levelLabel: string;
+  strengths: string[];
+  weaknesses: string[];
+  missingGaps: string[];
+  summaryText: string;
+  attributedSkills: string[];
+  teacherFeedback: string;
+  status: 'new' | 'reviewed';
+  reviewedBy: string;
+  reviewedAt: string | null;
+  createdAt: string;
+}
+
+export interface StudentTrackLock {
+  gradeLevel: string;
+  gradeLabel?: string;
+  curriculum: string;
+  trackKey: Exclude<CurriculumKey, 'all'>;
+}
+
 export interface UserProfile {
   id: string;
   email: string;
   name: string;
   role: 'student' | 'parent';
   preferredTrack: string;
+  lockedGrade?: string | null;
+  lockedCurriculum?: string | null;
+  lockedTrackKey?: string | null;
+  trialStartedAt?: string | null;
+  trialDurationSeconds?: number;
+  trialSecondsRemaining?: number;
+  trialExpired?: boolean;
+  hasPaidAccess?: boolean;
+  assignedSkills?: string[];
+  teacherStrengths?: string[];
+  teacherWeaknesses?: string[];
+  teacherFeedbackSummary?: string;
   unlockedPapers: string[];
   enrolledCourses: string[];
   hasAllAccessPass: boolean;
@@ -256,8 +300,17 @@ export interface BookingItem {
   curriculum: string;
   subject: string;
   sessionPackage: string;
+  durationMinutes: number;
+  durationLabel: string;
   dateSlot: string;
   timeSlot: string;
+  attachedWeaknesses: string[];
+  themesToCover: string[];
+  paymentMethod: string;
+  paymentReference: string;
+  paid: boolean;
+  meetLink: string;
+  calendarEventLink: string;
   priceSar: number;
   status: 'confirmed' | 'pending';
   notes: string;

@@ -1,4 +1,23 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { Type } from '@google/genai';
+import { generateContentWithResilience, getGeminiClient } from './gemini.ts';
+
+export type TrackKey = 'american' | 'ib' | 'british' | 'nafes' | 'qiyas' | 'french';
+
+export function mapCurriculumToTrackKey(curriculum: string): TrackKey {
+  const c = (curriculum || '').toLowerCase();
+  if (c.includes('nafes') || c.includes('نافس')) return 'nafes';
+  if (c.includes('qudurat') || c.includes('tahsili') || c.includes('qiyas') || c.includes('قياس') || c.includes('gat')) {
+    return 'qiyas';
+  }
+  if (c.includes('bac') || c.includes('français') || c.includes('aefe') || c.includes('brevet')) {
+    return 'french';
+  }
+  if (c.includes('igcse') || c.includes('a-level') || c.includes('british') || c.includes('cambridge')) {
+    return 'british';
+  }
+  if (c.includes('ib')) return 'ib';
+  return 'american';
+}
 
 export interface PlacementQuestion {
   id: string;
@@ -797,22 +816,16 @@ export async function evaluatePlacementTest(input: {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (apiKey) {
     try {
-      const ai = new GoogleGenAI({
-        apiKey,
-        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
-      });
-      const response = await ai.models.generateContent({
-        model: 'gemini-4-hydrogen',
+      const ai = getGeminiClient();
+      const response = await generateContentWithResilience(ai, {
         contents: `Write a crisp 2-sentence academic diagnostic summary in ${input.language} for a student in "${pkg.gradeLabel}" (${input.curriculum}) who scored ${overallScore}%. Strengths: ${strengths.join('; ')}. Missing concepts: ${missingGaps.join('; ')}.`,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              summary: { type: Type.STRING },
-            },
-            required: ['summary'],
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            summary: { type: Type.STRING },
           },
+          required: ['summary'],
         },
       });
       const parsed = JSON.parse((response.text ?? '{}').trim());

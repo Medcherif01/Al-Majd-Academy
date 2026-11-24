@@ -1,5 +1,20 @@
-import { Calendar, Compass, Download, FileCheck2, GraduationCap, LogOut, Sparkles } from 'lucide-react';
-import { downloadProtectedPaper } from '../utils/api';
+import { useState } from 'react';
+import {
+  Award,
+  Calendar,
+  Compass,
+  Download,
+  ExternalLink,
+  FileCheck2,
+  GraduationCap,
+  Lock,
+  LogOut,
+  Sparkles,
+  Target,
+  Video,
+} from 'lucide-react';
+import { apiRequest, downloadProtectedPaper } from '../utils/api';
+import { getCachedGoogleAccessToken, signInWithGoogleForMeet } from '../utils/googleMeetAuth';
 import { TRANSLATIONS } from '../i18n/translations';
 import type {
   BookingItem,
@@ -8,6 +23,7 @@ import type {
   PastPaperSummary,
   PlacementResult,
   ProgressState,
+  StudentTrackLock,
   UiLanguage,
   UserProfile,
 } from '../types/academy';
@@ -16,6 +32,7 @@ interface StudentPortalProps {
   lang: UiLanguage;
   user: UserProfile | null;
   token: string | null;
+  trackLock: StudentTrackLock | null;
   progress: ProgressState;
   papers: PastPaperSummary[];
   paidCourses: PaidCourseItem[];
@@ -24,6 +41,7 @@ interface StudentPortalProps {
   savedExams: GeneratedExam[];
   onOpenAuth: () => void;
   onSignOut: () => void;
+  onBookingUpdated?: (booking: BookingItem) => void;
   onReopenAiExam: (exam: GeneratedExam) => void;
   onGoToPlacement: () => void;
   onGoToPastPapers: () => void;
@@ -35,6 +53,7 @@ export function StudentPortal({
   lang,
   user,
   token,
+  trackLock,
   progress,
   papers,
   paidCourses,
@@ -43,6 +62,7 @@ export function StudentPortal({
   savedExams,
   onOpenAuth,
   onSignOut,
+  onBookingUpdated,
   onReopenAiExam,
   onGoToPlacement,
   onGoToPastPapers,
@@ -50,6 +70,8 @@ export function StudentPortal({
   onGoToCourse,
 }: StudentPortalProps) {
   const t = TRANSLATIONS[lang];
+  const [meetBusyId, setMeetBusyId] = useState<string | null>(null);
+  const [meetError, setMeetError] = useState<string>('');
 
   if (!user || !token) {
     return (
@@ -79,6 +101,39 @@ export function StudentPortal({
   const unlockedPapers = papers.filter((p) => p.isUnlocked);
   const enrolledPaidCourses = paidCourses.filter((c) => c.isEnrolled || user.enrolledCourses?.includes(c.id));
 
+  const activeGrade = user.lockedGrade || trackLock?.gradeLevel;
+  const activeCurr = user.lockedCurriculum || trackLock?.curriculum;
+
+  const handleGenerateMeetForBooking = async (bookingId: string) => {
+    if (!token) return;
+    setMeetError('');
+    setMeetBusyId(bookingId);
+    try {
+      let gToken = getCachedGoogleAccessToken();
+      if (!gToken) {
+        const res = await signInWithGoogleForMeet();
+        gToken = res?.accessToken || null;
+      }
+      if (!gToken) {
+        throw new Error('Connexion Google requise pour générer le lien Google Meet.');
+      }
+      const res = await apiRequest<{ booking: BookingItem }>(
+        `/api/bookings/${encodeURIComponent(bookingId)}/generate-meet`,
+        {
+          method: 'POST',
+          token,
+          headers: { 'x-google-access-token': gToken },
+          body: { googleAccessToken: gToken },
+        }
+      );
+      onBookingUpdated?.(res.booking);
+    } catch (err: any) {
+      setMeetError(err.message || 'Impossible de générer la salle Google Meet.');
+    } finally {
+      setMeetBusyId(null);
+    }
+  };
+
   return (
     <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 space-y-10">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-200">
@@ -97,7 +152,15 @@ export function StudentPortal({
                   : 'Compte Élève'}{' '}
             · {user.email}
           </p>
-          <h2 className="font-display text-3xl font-semibold text-slate-900">{user.name}</h2>
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="font-display text-3xl font-semibold text-slate-900">{user.name}</h2>
+            {activeGrade && activeCurr && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#EEF5F9] border border-[#BFD8E6] text-xs font-semibold text-[#0B6E8C]">
+                <Lock className="w-3.5 h-3.5" />
+                {activeGrade.toUpperCase()} · {activeCurr}
+              </span>
+            )}
+          </div>
         </div>
 
         <button
@@ -228,6 +291,83 @@ export function StudentPortal({
         )}
       </div>
 
+      {/* Teacher-Attributed Skills & Strengths/Weaknesses Evaluation */}
+      {((user.assignedSkills && user.assignedSkills.length > 0) ||
+        (user.teacherStrengths && user.teacherStrengths.length > 0) ||
+        (user.teacherWeaknesses && user.teacherWeaknesses.length > 0) ||
+        user.teacherFeedbackSummary) && (
+        <div className="bg-white border border-[#BFD8E6] rounded-2xl p-6 space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+            <h3 className="font-display text-xl font-semibold text-[#0F2537] flex items-center gap-2">
+              <Award className="w-5 h-5 text-[#0B6E8C]" />
+              <span>
+                {lang === 'ar'
+                  ? 'المهارات المحددة وتقييم المدرب'
+                  : lang === 'en'
+                    ? 'Teacher-Attributed Skills & Evaluation'
+                    : 'Compétences & Bilan Attribués par le Formateur'}
+              </span>
+            </h3>
+          </div>
+
+          {user.teacherFeedbackSummary && (
+            <p className="text-sm text-slate-700 bg-[#F8FAFC] p-4 rounded-xl border border-slate-200 leading-relaxed">
+              {user.teacherFeedbackSummary}
+            </p>
+          )}
+
+          {user.assignedSkills && user.assignedSkills.length > 0 && (
+            <div>
+              <div className="text-xs font-semibold text-[#0B6E8C] mb-2">
+                {lang === 'ar'
+                  ? 'المهارات المطلوب إتقانها :'
+                  : lang === 'en'
+                    ? 'Required Skills Assigned to Your Plan:'
+                    : 'Compétences prioritaires attribuées à votre parcours :'}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {user.assignedSkills.map((sk) => (
+                  <span
+                    key={sk}
+                    className="px-3 py-1.5 rounded-xl bg-[#EEF5F9] border border-[#BFD8E6] text-xs font-semibold text-[#0F2537]"
+                  >
+                    {sk}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {user.teacherStrengths && user.teacherStrengths.length > 0 && (
+              <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200">
+                <div className="text-xs font-semibold text-emerald-900 mb-2">
+                  Points forts validés par le formateur
+                </div>
+                <ul className="space-y-1 text-xs text-slate-700">
+                  {user.teacherStrengths.map((s, i) => (
+                    <li key={i}>• {s}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {user.teacherWeaknesses && user.teacherWeaknesses.length > 0 && (
+              <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-200">
+                <div className="text-xs font-semibold text-amber-900 mb-2 flex items-center gap-1.5">
+                  <Target className="w-3.5 h-3.5" />
+                  <span>Points faibles à travailler en cours privé</span>
+                </div>
+                <ul className="space-y-1 text-xs text-slate-700">
+                  {user.teacherWeaknesses.map((w, i) => (
+                    <li key={i}>• {w}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Unlocked Past Papers */}
         <div className="bg-white border border-slate-200 rounded-2xl p-6">
@@ -332,17 +472,77 @@ export function StudentPortal({
                 </div>
               ))}
 
+              {meetError && (
+                <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-900">
+                  {meetError}
+                </div>
+              )}
+
               {bookings.map((b) => (
-                <div key={b.id} className="p-4 rounded-xl border border-slate-200 space-y-1">
+                <div key={b.id} className="p-4 rounded-xl border border-slate-200 bg-[#F8FAFC] space-y-2">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-emerald-800">{b.trainerName}</span>
-                    <span className="font-mono text-slate-700 tabular-nums">{b.priceSar} SAR</span>
+                    <span className="font-semibold text-[#0B6E8C]">{b.trainerName}</span>
+                    <span className="font-mono text-slate-700 tabular-nums">
+                      {b.priceSar} SAR {b.paymentReference ? `· ${b.paymentReference}` : ''}
+                    </span>
                   </div>
                   <div className="text-sm font-semibold text-slate-900">
                     {b.curriculum} · {b.subject}
                   </div>
                   <div className="text-xs text-slate-600 tabular-nums">
-                    {b.dateSlot} · {b.timeSlot} · {b.language} · {b.sessionPackage}
+                    {b.dateSlot} · {b.timeSlot} · {b.durationLabel || `${b.durationMinutes || 60} min`} · {b.language}
+                  </div>
+                  {b.attachedWeaknesses && b.attachedWeaknesses.length > 0 && (
+                    <div className="text-[11px] text-amber-900">
+                      <strong>Points faibles :</strong> {b.attachedWeaknesses.join(' · ')}
+                    </div>
+                  )}
+                  {b.themesToCover && b.themesToCover.length > 0 && (
+                    <div className="text-[11px] text-slate-700">
+                      <strong>Thèmes :</strong> {b.themesToCover.join(' · ')}
+                    </div>
+                  )}
+
+                  <div className="pt-2 border-t border-slate-200 flex flex-wrap items-center gap-2">
+                    {b.meetLink ? (
+                      <>
+                        <a
+                          href={b.meetLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-lg inline-flex items-center gap-1.5"
+                        >
+                          <Video className="w-3.5 h-3.5" />
+                          <span>Rejoindre Google Meet</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                        {b.calendarEventLink && (
+                          <a
+                            href={b.calendarEventLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2.5 py-1.5 bg-white border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg inline-flex items-center gap-1"
+                          >
+                            <Calendar className="w-3 h-3" />
+                            <span>Agenda</span>
+                          </a>
+                        )}
+                      </>
+                    ) : b.paid ? (
+                      <button
+                        type="button"
+                        disabled={meetBusyId === b.id}
+                        onClick={() => handleGenerateMeetForBooking(b.id)}
+                        className="px-3 py-1.5 bg-[#0F2537] hover:bg-[#0B6E8C] text-white text-xs font-semibold rounded-lg inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <Video className="w-3.5 h-3.5" />
+                        <span>
+                          {meetBusyId === b.id
+                            ? 'Création Google Meet...'
+                            : 'Connecter Google & Générer le lien Meet'}
+                        </span>
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               ))}

@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import express from 'express';
 import {
+  computeUserEntitlements,
   connectDatabase,
   db,
   isMongoConnected,
@@ -24,9 +25,14 @@ import {
   buildPlacementQuestions,
   evaluatePlacementTest,
   GRADE_LEVEL_OPTIONS,
+  mapCurriculumToTrackKey,
   PAID_COURSES_CATALOG,
 } from './placement.ts';
-import { generateInternationalExam, evaluateWritingWithGemini } from './gemini.ts';
+import {
+  evaluateWritingWithGemini,
+  GeminiUnavailableError,
+  generateInternationalExam,
+} from './gemini.ts';
 
 function isNonEmptyString(val: unknown, maxLen = 300): val is string {
   return typeof val === 'string' && val.trim().length > 0 && val.trim().length <= maxLen;
@@ -153,6 +159,15 @@ export function createApiApp() {
         name: name.trim(),
         role: role === 'parent' ? 'parent' : 'student',
         preferredTrack: isNonEmptyString(preferredTrack, 40) ? preferredTrack.trim() : 'ib',
+        lockedGrade: null,
+        lockedCurriculum: null,
+        lockedTrackKey: null,
+        trialStartedAt: new Date().toISOString(),
+        trialDurationSeconds: 1800,
+        assignedSkills: [],
+        teacherStrengths: [],
+        teacherWeaknesses: [],
+        teacherFeedbackSummary: '',
         passwordHash: hash,
         salt,
         unlockedPapers: [],
@@ -197,9 +212,18 @@ export function createApiApp() {
         const { hash, salt } = hashPassword(randomSeed);
         user = await db.createUser({
           email: demoEmail,
-          name: role === 'parent' ? 'Famille Al-Mansour (Parent)' : 'Youssef Al-Harbi (Élève IB/SAT)',
+          name: role === 'parent' ? 'Famille Al-Mansour (Parent)' : 'Youssef Al-Harbi (Élève)',
           role,
           preferredTrack: 'ib',
+          lockedGrade: null,
+          lockedCurriculum: null,
+          lockedTrackKey: null,
+          trialStartedAt: new Date().toISOString(),
+          trialDurationSeconds: 1800,
+          assignedSkills: [],
+          teacherStrengths: [],
+          teacherWeaknesses: [],
+          teacherFeedbackSummary: '',
           passwordHash: hash,
           salt,
           unlockedPapers: [],
@@ -216,6 +240,36 @@ export function createApiApp() {
 
   app.get('/api/auth/me', requireAuth, (req: AuthenticatedRequest, res) => {
     res.json({ user: sanitizeUser(req.user!) });
+  });
+
+  app.post('/api/auth/lock-track', requireAuth, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { gradeLevel, curriculum } = req.body ?? {};
+      if (!isNonEmptyString(gradeLevel, 40) || !isNonEmptyString(curriculum, 80)) {
+        res.status(400).json({ error: 'Classe et système d’examen requis.' });
+        return;
+      }
+      const trackKey = mapCurriculumToTrackKey(curriculum.trim());
+      const updated = await db.lockUserTrack(req.user!.id, gradeLevel.trim(), curriculum.trim(), trackKey);
+      res.json({ user: updated ? sanitizeUser(updated) : sanitizeUser(req.user!) });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Impossible de verrouiller le parcours.' });
+    }
+  });
+
+  app.get('/api/trial/status', requireAuth, (req: AuthenticatedRequest, res) => {
+    res.json({
+      entitlements: computeUserEntitlements(req.user!),
+      user: sanitizeUser(req.user!),
+    });
+  });
+
+  app.get('/api/student/teacher-feedback', requireAuth, async (req: AuthenticatedRequest, res) => {
+    const latestReport = await db.getLatestDemoReportForUser(req.user!.id);
+    res.json({
+      report: latestReport,
+      user: sanitizeUser(req.user!),
+    });
   });
 
   // --- Trainers ---
@@ -367,7 +421,124 @@ export function createApiApp() {
     res.send(html);
   });
 
-  // --- Paid Online Tutoring Bookings ---
+  // --- Paid Online Tutoring Bookings + Post-Payment Google Meet & Calendar Integration ---
+  async function createGoogleMeetAndCalendarEvent(
+    googleAccessToken: string,
+    details: {
+      studentName: string;
+      trainerName: string;
+      curriculum: string;
+      subject: string;
+      dateSlot: string;
+      timeSlot: string;
+      durationMinutes: number;
+      weaknesses: string[];
+      themes: string[];
+    }
+  ): Promise<{ meetLink: string; calendarEventLink: string; warning?: string }> {
+    const cleanToken = googleAccessToken.replace(/^Bearer\s+/i, '').trim();
+    if (!cleanToken) {
+      return { meetLink: '', calendarEventLink: '', warning: 'Token Google manquant.' };
+    }
+
+    let meetLink = '';
+    let calendarEventLink = '';
+    let warning = '';
+
+    // 1. Create instant Google Meet space via Meet API v2
+    try {
+      const meetRes = await fetch('https://meet.googleapis.com/v2/spaces', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${cleanToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+      if (meetRes.ok) {
+        const meetData: any = await meetRes.json();
+        if (meetData?.meetingUri) {
+          meetLink = String(meetData.meetingUri);
+        }
+      } else {
+        const errText = await meetRes.text().catch(() => '');
+        warning = `Google Meet API (${meetRes.status}): ${errText.slice(0, 140)}`;
+      }
+    } catch (err: any) {
+      warning = err?.message || 'Erreur réseau Google Meet API';
+    }
+
+    // 2. Create Calendar Event in Asia/Riyadh (+03:00) with conferenceData or Meet link
+    try {
+      const timeMatch = details.timeSlot.match(/(\d{1,2}):(\d{2})/);
+      const hour = timeMatch ? String(timeMatch[1]).padStart(2, '0') : '17';
+      const min = timeMatch ? String(timeMatch[2]).padStart(2, '0') : '00';
+      const startIso = `${details.dateSlot}T${hour}:${min}:00+03:00`;
+      const endMs = Date.parse(startIso) + details.durationMinutes * 60 * 1000;
+      const endDate = Number.isFinite(endMs)
+        ? new Date(endMs).toISOString()
+        : `${details.dateSlot}T18:00:00+03:00`;
+
+      const descriptionLines = [
+        `Élève : ${details.studentName}`,
+        `Formateur : ${details.trainerName}`,
+        `Programme : ${details.curriculum} — ${details.subject}`,
+        `Durée : ${details.durationMinutes} min`,
+        details.weaknesses.length > 0
+          ? `Points faibles à travailler : ${details.weaknesses.join(' ; ')}`
+          : '',
+        details.themes.length > 0
+          ? `Thèmes & Leçons demandés : ${details.themes.join(' ; ')}`
+          : '',
+        meetLink ? `Lien Google Meet direct : ${meetLink}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      const eventPayload: any = {
+        summary: `Al-Majd Coaching : ${details.studentName} & ${details.trainerName} (${details.subject})`,
+        description: descriptionLines,
+        start: { dateTime: startIso, timeZone: 'Asia/Riyadh' },
+        end: { dateTime: endDate, timeZone: 'Asia/Riyadh' },
+      };
+
+      if (!meetLink) {
+        eventPayload.conferenceData = {
+          createRequest: {
+            requestId: crypto.randomUUID(),
+            conferenceSolutionKey: { type: 'hangoutsMeet' },
+          },
+        };
+      } else {
+        eventPayload.location = meetLink;
+      }
+
+      const calRes = await fetch(
+        'https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${cleanToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(eventPayload),
+        }
+      );
+
+      if (calRes.ok) {
+        const calData: any = await calRes.json();
+        calendarEventLink = String(calData?.htmlLink || '');
+        if (!meetLink && calData?.hangoutLink) {
+          meetLink = String(calData.hangoutLink);
+        }
+      }
+    } catch {
+      // Calendar event creation is secondary if Meet space already succeeded
+    }
+
+    return { meetLink, calendarEventLink, warning: warning || undefined };
+  }
+
   app.get('/api/bookings', requireAuth, async (req: AuthenticatedRequest, res) => {
     const bookings = await db.getBookingsByUser(req.user!.id);
     res.json({ bookings });
@@ -376,8 +547,21 @@ export function createApiApp() {
   app.post('/api/bookings', requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
       const user = req.user!;
-      const { trainerId, language, curriculum, subject, sessionPackage, dateSlot, timeSlot, studentName, notes } =
-        req.body ?? {};
+      const {
+        trainerId,
+        language,
+        curriculum,
+        subject,
+        durationMinutes,
+        dateSlot,
+        timeSlot,
+        studentName,
+        attachedWeaknesses,
+        themesToCover,
+        paymentMethod,
+        notes,
+        googleAccessToken,
+      } = req.body ?? {};
 
       const trainer = TRAINERS.find((t) => t.id === trainerId);
       if (!trainer) {
@@ -398,22 +582,93 @@ export function createApiApp() {
         return;
       }
       if (!isNonEmptyString(dateSlot, 40) || !isNonEmptyString(timeSlot, 40)) {
-        res.status(400).json({ error: 'Créneau horaire requis.' });
+        res.status(400).json({ error: 'Date et créneau horaire requis.' });
         return;
       }
 
-      const isPack = sessionPackage === 'pack_5';
-      const isIntensive = sessionPackage === 'intensive_90';
-      const priceSar = isPack
-        ? trainer.packRateSar
-        : isIntensive
-          ? trainer.hourlyRateSar + 70
-          : trainer.hourlyRateSar;
-      const packageLabel = isPack
-        ? 'Pack 5 Séances (5 × 60 min)'
-        : isIntensive
-          ? 'Coaching Intensif Examen (90 min)'
-          : 'Séance Individuelle (60 min)';
+      const allowedDurations = [30, 60, 90, 120, 300] as const;
+      const mins = allowedDurations.includes(Number(durationMinutes) as any)
+        ? Number(durationMinutes)
+        : 60;
+
+      let priceSar = trainer.hourlyRateSar;
+      let durationLabel = '60 min (1 heure)';
+      let packageLabel = 'Séance Individuelle (60 min)';
+
+      if (mins === 30) {
+        priceSar = Math.round(trainer.hourlyRateSar * 0.6);
+        durationLabel = '30 min';
+        packageLabel = 'Session Ciblée (30 min)';
+      } else if (mins === 90) {
+        priceSar = trainer.hourlyRateSar + 70;
+        durationLabel = '90 min (1h 30)';
+        packageLabel = 'Coaching Intensif (90 min)';
+      } else if (mins === 120) {
+        priceSar = trainer.hourlyRateSar * 2 - 20;
+        durationLabel = '120 min (2 heures)';
+        packageLabel = 'Séance Approfondie (2 heures)';
+      } else if (mins === 300) {
+        priceSar = trainer.packRateSar;
+        durationLabel = '300 min (5 heures · Pack)';
+        packageLabel = 'Pack 5 Heures (5 × 60 min)';
+      }
+
+      const cleanWeaknesses = Array.isArray(attachedWeaknesses)
+        ? attachedWeaknesses.filter((w) => isNonEmptyString(w, 200)).map((w) => w.trim()).slice(0, 10)
+        : [];
+      const cleanThemes = Array.isArray(themesToCover)
+        ? themesToCover.filter((th) => isNonEmptyString(th, 200)).map((th) => th.trim()).slice(0, 12)
+        : [];
+
+      const payMethod = isNonEmptyString(paymentMethod, 50) ? paymentMethod.trim() : 'Mada / Visa';
+      const payRef = `TUT-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+
+      // Record paid order first
+      await db.createOrder({
+        userId: user.id,
+        customerEmail: user.email,
+        items: [
+          {
+            paperId: `tutoring-${trainer.id}-${mins}m`,
+            title: `Tutorat Privé ${trainer.name} (${durationLabel})`,
+            priceSar,
+          },
+        ],
+        isAllAccessPass: false,
+        totalSar: priceSar,
+        paymentMethod: payMethod,
+        referenceCode: payRef,
+        status: 'paid',
+      });
+
+      // AFTER payment succeeds, generate live Google Meet & Calendar links if Google token provided
+      const headerGoogleToken =
+        typeof req.headers['x-google-access-token'] === 'string'
+          ? req.headers['x-google-access-token']
+          : '';
+      const activeGoogleToken =
+        (typeof googleAccessToken === 'string' && googleAccessToken.trim()) || headerGoogleToken;
+
+      let meetLink = '';
+      let calendarEventLink = '';
+      let meetWarning = '';
+
+      if (activeGoogleToken) {
+        const meetResult = await createGoogleMeetAndCalendarEvent(activeGoogleToken, {
+          studentName: isNonEmptyString(studentName, 100) ? studentName.trim() : user.name,
+          trainerName: trainer.name,
+          curriculum: curriculum.trim(),
+          subject: subject.trim(),
+          dateSlot: dateSlot.trim(),
+          timeSlot: timeSlot.trim(),
+          durationMinutes: mins,
+          weaknesses: cleanWeaknesses,
+          themes: cleanThemes,
+        });
+        meetLink = meetResult.meetLink;
+        calendarEventLink = meetResult.calendarEventLink;
+        meetWarning = meetResult.warning || '';
+      }
 
       const booking = await db.createBooking({
         userId: user.id,
@@ -425,22 +680,96 @@ export function createApiApp() {
         curriculum: curriculum.trim(),
         subject: subject.trim(),
         sessionPackage: packageLabel,
+        durationMinutes: mins,
+        durationLabel,
         dateSlot: dateSlot.trim(),
         timeSlot: timeSlot.trim(),
+        attachedWeaknesses: cleanWeaknesses,
+        themesToCover: cleanThemes,
+        paymentMethod: payMethod,
+        paymentReference: payRef,
+        paid: true,
+        meetLink,
+        calendarEventLink,
         priceSar,
         status: 'confirmed',
         notes: typeof notes === 'string' ? notes.slice(0, 500).trim() : '',
       });
 
-      res.status(201).json({ booking });
+      res.status(201).json({ booking, meetWarning: meetWarning || undefined });
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Erreur lors de la réservation.' });
+    }
+  });
+
+  app.post('/api/bookings/:id/generate-meet', requireAuth, async (req: AuthenticatedRequest, res) => {
+    try {
+      const booking = await db.findBookingById(req.params.id);
+      if (!booking || booking.userId !== req.user!.id) {
+        res.status(404).json({ error: 'Réservation introuvable.' });
+        return;
+      }
+      if (!booking.paid) {
+        res.status(402).json({ error: 'Le paiement de la formation doit être confirmé avant de générer la réunion Google Meet.' });
+        return;
+      }
+      const headerToken =
+        typeof req.headers['x-google-access-token'] === 'string'
+          ? req.headers['x-google-access-token']
+          : '';
+      const bodyToken =
+        typeof req.body?.googleAccessToken === 'string' ? req.body.googleAccessToken : '';
+      const activeGoogleToken = bodyToken.trim() || headerToken.trim();
+
+      if (!activeGoogleToken) {
+        res.status(400).json({ error: 'Connectez votre compte Google pour créer la réunion Google Meet.' });
+        return;
+      }
+
+      const meetResult = await createGoogleMeetAndCalendarEvent(activeGoogleToken, {
+        studentName: booking.studentName,
+        trainerName: booking.trainerName,
+        curriculum: booking.curriculum,
+        subject: booking.subject,
+        dateSlot: booking.dateSlot,
+        timeSlot: booking.timeSlot,
+        durationMinutes: booking.durationMinutes,
+        weaknesses: booking.attachedWeaknesses,
+        themes: booking.themesToCover,
+      });
+
+      if (!meetResult.meetLink) {
+        res.status(502).json({
+          error: meetResult.warning || 'Impossible de créer la salle Google Meet. Vérifiez les autorisations Google.',
+        });
+        return;
+      }
+
+      const updated = await db.updateBookingMeetLinks(
+        booking.id,
+        meetResult.meetLink,
+        meetResult.calendarEventLink
+      );
+      res.json({ booking: updated });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de la génération Google Meet.' });
     }
   });
 
   // --- Gemini AI Exam Generator ---
   app.post('/api/exams/generate', optionalAuth, async (req: AuthenticatedRequest, res) => {
     try {
+      if (req.user) {
+        const entitlements = computeUserEntitlements(req.user);
+        if (entitlements.trialExpired) {
+          res.status(402).json({
+            error:
+              'Votre essai gratuit de 30 minutes est terminé. Inscrivez-vous à un cours payant ou réservez une séance privée pour continuer.',
+          });
+          return;
+        }
+      }
+
       const { curriculum, subject, language, difficulty, topic, questionCount } = req.body ?? {};
       if (!isNonEmptyString(curriculum, 80) || !isNonEmptyString(subject, 80)) {
         res.status(400).json({ error: 'Veuillez sélectionner un système d’examen et une matière.' });
@@ -496,6 +825,13 @@ export function createApiApp() {
         res.status(503).json({
           error:
             'La clé API Gemini (GEMINI_API_KEY) n’est pas encore configurée dans les secrets du serveur.',
+        });
+        return;
+      }
+      if (err instanceof GeminiUnavailableError || msg.includes('503') || msg.includes('UNAVAILABLE')) {
+        res.status(503).json({
+          error:
+            'Les serveurs Gemini connaissent un pic temporaire de demande (503) après plusieurs tentatives automatiques. Veuillez réessayer dans quelques secondes.',
         });
         return;
       }
@@ -569,7 +905,7 @@ export function createApiApp() {
 
   app.post('/api/placement/evaluate', optionalAuth, async (req: AuthenticatedRequest, res) => {
     try {
-      const { gradeLevel, curriculum, language, answers } = req.body ?? {};
+      const { gradeLevel, curriculum, language, answers, studentName, studentEmail } = req.body ?? {};
       const validGrade = isNonEmptyString(gradeLevel, 40) ? gradeLevel.trim() : 'grade-10';
       const validCurriculum = isNonEmptyString(curriculum, 80) ? curriculum.trim() : 'IB Diploma';
       const validLang: 'Français' | 'English' | 'العربية' =
@@ -591,12 +927,47 @@ export function createApiApp() {
         answers: normalizedAnswers,
       });
 
+      const resolvedStudentName =
+        req.user?.name || (isNonEmptyString(studentName, 100) ? studentName.trim() : 'Élève en Essai Démo');
+      const resolvedStudentEmail =
+        req.user?.email || (isValidEmail(studentEmail) ? studentEmail.trim().toLowerCase() : 'demo-trial@almajd-academy.sa');
+
+      // Always send a Demo Placement Report directly to the assigned teacher (Marwan or Mohamed)
+      const demoReport = await db.createDemoReport({
+        userId: req.user?.id || 'guest',
+        teacherId: evaluation.recommendedTrainerId,
+        studentName: resolvedStudentName,
+        studentEmail: resolvedStudentEmail,
+        gradeLevel: validGrade,
+        curriculum: validCurriculum,
+        language: validLang,
+        overallScore: evaluation.overallScore,
+        levelLabel: evaluation.levelLabel,
+        strengths: evaluation.strengths,
+        weaknesses: evaluation.weaknesses,
+        missingGaps: evaluation.missingGaps,
+        summaryText: evaluation.summaryText,
+        attributedSkills: [],
+        teacherFeedback: '',
+        status: 'new',
+        reviewedBy: '',
+        reviewedAt: null,
+      });
+
       if (req.user) {
-        const saved = await db.savePlacementResult({
-          userId: req.user.id,
-          ...evaluation,
+        const trackKey = mapCurriculumToTrackKey(validCurriculum);
+        const [saved, lockedUser] = await Promise.all([
+          db.savePlacementResult({
+            userId: req.user.id,
+            ...evaluation,
+          }),
+          db.lockUserTrack(req.user.id, validGrade, validCurriculum, trackKey),
+        ]);
+        res.json({
+          result: saved,
+          reportId: demoReport.id,
+          user: lockedUser ? sanitizeUser(lockedUser) : sanitizeUser(req.user),
         });
-        res.json({ result: saved });
         return;
       }
 
@@ -607,6 +978,7 @@ export function createApiApp() {
           createdAt: new Date().toISOString(),
           ...evaluation,
         },
+        reportId: demoReport.id,
       });
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Erreur lors de l’analyse du test de niveau.' });
@@ -692,19 +1064,59 @@ export function createApiApp() {
       const teacherParam = req.query.teacherId;
       const teacherId =
         teacherParam === 'mohamed' ? 'mohamed' : teacherParam === 'marwan' ? 'marwan' : undefined;
-      const [students, missions, writings] = await Promise.all([
+      const [students, missions, writings, demoReports, bookings] = await Promise.all([
         db.getRosterStudents(teacherId),
         db.getWeeklyMissions(teacherId),
         db.getWritingSubmissions(teacherId),
+        db.getDemoReports(teacherId),
+        db.getBookingsByTrainer(teacherId),
       ]);
       res.json({
         students,
         missions,
         writings,
+        demoReports,
+        bookings,
         pendingWritingCount: writings.filter((w) => w.status === 'pending').length,
+        pendingDemoReportsCount: demoReports.filter((r) => r.status === 'new').length,
       });
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Erreur lors du chargement du portail formateur.' });
+    }
+  });
+
+  app.post('/api/teacher/demo-reports/:id/attribute', async (req, res) => {
+    try {
+      const { strengths, weaknesses, attributedSkills, teacherFeedback, reviewedBy } = req.body ?? {};
+      const cleanStrengths = Array.isArray(strengths)
+        ? strengths.filter((s) => isNonEmptyString(s, 220)).map((s) => s.trim())
+        : [];
+      const cleanWeaknesses = Array.isArray(weaknesses)
+        ? weaknesses.filter((w) => isNonEmptyString(w, 220)).map((w) => w.trim())
+        : [];
+      const cleanSkills = Array.isArray(attributedSkills)
+        ? attributedSkills.filter((sk) => isNonEmptyString(sk, 160)).map((sk) => sk.trim())
+        : [];
+
+      if (cleanSkills.length === 0) {
+        res.status(400).json({ error: 'Sélectionnez au moins une compétence à attribuer à l’élève.' });
+        return;
+      }
+
+      const updated = await db.attributeDemoReport(req.params.id, {
+        strengths: cleanStrengths,
+        weaknesses: cleanWeaknesses,
+        attributedSkills: cleanSkills,
+        teacherFeedback: isNonEmptyString(teacherFeedback, 1500) ? teacherFeedback.trim() : '',
+        reviewedBy: isNonEmptyString(reviewedBy, 100) ? reviewedBy.trim() : 'Formateur',
+      });
+      if (!updated) {
+        res.status(404).json({ error: 'Rapport démo introuvable.' });
+        return;
+      }
+      res.json({ report: updated });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de l’attribution des compétences.' });
     }
   });
 
@@ -868,11 +1280,21 @@ export function createApiApp() {
         prompt: target.prompt,
         content: target.content,
       });
-      res.json(draft);
+      res.json({
+        suggestedScore: draft.suggestedScore,
+        suggestedFeedback: draft.feedback,
+        feedback: draft.feedback,
+      });
     } catch (err: any) {
       const msg = err?.message || '';
       if (msg === 'GEMINI_API_KEY_MISSING') {
         res.status(503).json({ error: 'Clé Gemini non configurée pour l’aide à la correction.' });
+        return;
+      }
+      if (err instanceof GeminiUnavailableError || msg.includes('503') || msg.includes('UNAVAILABLE')) {
+        res.status(503).json({
+          error: 'Le service Gemini est temporairement surchargé (503). Réessayez dans quelques instants.',
+        });
         return;
       }
       res.status(500).json({ error: msg || 'Erreur Gemini' });

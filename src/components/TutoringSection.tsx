@@ -1,8 +1,30 @@
-import { useEffect, useState } from 'react';
-import { CalendarCheck, CheckCircle2, Globe2 } from 'lucide-react';
-import { apiRequest } from '../utils/api';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Calendar,
+  CalendarCheck,
+  CheckCircle2,
+  CreditCard,
+  ExternalLink,
+  Globe2,
+  Plus,
+  Video,
+} from 'lucide-react';
+import { COURSE_MODULES } from '../data/curriculumData';
 import { TRANSLATIONS } from '../i18n/translations';
-import type { BookingItem, TrainerProfile, UiLanguage, UserProfile } from '../types/academy';
+import { apiRequest } from '../utils/api';
+import {
+  getCachedGoogleAccessToken,
+  initGoogleWorkspaceAuth,
+  signInWithGoogleForMeet,
+} from '../utils/googleMeetAuth';
+import type {
+  BookingItem,
+  PlacementResult,
+  StudentTrackLock,
+  TrainerProfile,
+  UiLanguage,
+  UserProfile,
+} from '../types/academy';
 
 interface TutoringSectionProps {
   lang: UiLanguage;
@@ -10,8 +32,11 @@ interface TutoringSectionProps {
   preselectedTrainerName?: string | null;
   user: UserProfile | null;
   token: string | null;
+  latestPlacement: PlacementResult | null;
+  trackLock: StudentTrackLock | null;
   onRequireAuth: () => void;
   onBookingCreated: (booking: BookingItem) => void;
+  onBookingUpdated?: (booking: BookingItem) => void;
 }
 
 const TRAINER_IMAGES: Record<'marwan' | 'mohamed', string> = {
@@ -19,28 +44,68 @@ const TRAINER_IMAGES: Record<'marwan' | 'mohamed', string> = {
   mohamed: '/src/assets/images/trainer_mohamed_cherif_1795527477326.jpg',
 };
 
+const DURATION_OPTIONS: { minutes: 30 | 60 | 90 | 120 | 300; labelFr: string; labelEn: string; labelAr: string }[] = [
+  { minutes: 30, labelFr: '30 min (Session ciblée)', labelEn: '30 min (Targeted Session)', labelAr: '30 دقيقة (جلسة مركزة)' },
+  { minutes: 60, labelFr: '60 min (1 heure complète)', labelEn: '60 min (1 Full Hour)', labelAr: '60 دقيقة (ساعة كاملة)' },
+  { minutes: 90, labelFr: '90 min (1h 30 · Coaching intensif)', labelEn: '90 min (1h 30 · Intensive)', labelAr: '90 دقيقة (تدريب مكثف)' },
+  { minutes: 120, labelFr: '120 min (2 heures · Approfondi)', labelEn: '120 min (2 Hours · Deep Dive)', labelAr: '120 دقيقة (ساعتان)' },
+  { minutes: 300, labelFr: '300 min (Pack 5 heures)', labelEn: '300 min (5-Hour Pack)', labelAr: '300 دقيقة (باقة 5 ساعات)' },
+];
+
 export function TutoringSection({
   lang,
   trainers,
   preselectedTrainerName,
   user,
   token,
+  latestPlacement,
+  trackLock,
   onRequireAuth,
   onBookingCreated,
+  onBookingUpdated,
 }: TutoringSectionProps) {
   const t = TRANSLATIONS[lang];
   const [selectedTrainerId, setSelectedTrainerId] = useState<'marwan' | 'mohamed'>('marwan');
   const [language, setLanguage] = useState<'English' | 'Français' | 'العربية'>('English');
   const [curriculum, setCurriculum] = useState<string>('Digital SAT & ACT');
   const [subject, setSubject] = useState<string>('Mathematics');
-  const [sessionPackage, setSessionPackage] = useState<'single_60' | 'intensive_90' | 'pack_5'>('single_60');
+  const [durationMinutes, setDurationMinutes] = useState<30 | 60 | 90 | 120 | 300>(60);
   const [dateSlot, setDateSlot] = useState<string>('2026-11-28');
   const [timeSlot, setTimeSlot] = useState<string>('17:00 AST');
   const [studentName, setStudentName] = useState<string>(user?.name || '');
+  const [paymentMethod, setPaymentMethod] = useState<string>('Mada · Saudi Payments');
   const [notes, setNotes] = useState<string>('');
+
+  // Weaknesses & Themes attached to teacher report
+  const [attachedWeaknesses, setAttachedWeaknesses] = useState<string[]>([]);
+  const [customWeakness, setCustomWeakness] = useState('');
+  const [themesToCover, setThemesToCover] = useState<string[]>([]);
+  const [customTheme, setCustomTheme] = useState('');
+
+  // Google Workspace OAuth (Meet & Calendar)
+  const [googleEmail, setGoogleEmail] = useState<string | null>(null);
+  const [googleToken, setGoogleToken] = useState<string | null>(() => getCachedGoogleAccessToken());
+  const [googleConnecting, setGoogleConnecting] = useState(false);
+
   const [submitting, setSubmitting] = useState(false);
+  const [generatingMeet, setGeneratingMeet] = useState(false);
   const [error, setError] = useState('');
+  const [meetWarning, setMeetWarning] = useState('');
   const [confirmedBooking, setConfirmedBooking] = useState<BookingItem | null>(null);
+
+  useEffect(() => {
+    const unsub = initGoogleWorkspaceAuth(
+      (gUser, gTok) => {
+        setGoogleEmail(gUser.email || gUser.displayName || 'Google Connecté');
+        setGoogleToken(gTok);
+      },
+      () => {
+        setGoogleEmail(null);
+        setGoogleToken(null);
+      }
+    );
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     if (user?.name && !studentName) {
@@ -48,16 +113,78 @@ export function TutoringSection({
     }
   }, [user, studentName]);
 
+  // Pre-fill weaknesses from diagnostic / teacher feedback
+  const suggestedWeaknesses = useMemo(() => {
+    const list = [
+      ...(user?.teacherWeaknesses || []),
+      ...(latestPlacement?.weaknesses || []),
+      ...(latestPlacement?.missingGaps || []),
+    ];
+    return Array.from(new Set(list.filter(Boolean)));
+  }, [user, latestPlacement]);
+
   useEffect(() => {
-    if (!preselectedTrainerName) return;
-    if (preselectedTrainerName.toLowerCase().includes('mohamed')) {
-      handleSelectTrainer('mohamed');
-    } else if (preselectedTrainerName.toLowerCase().includes('marwan')) {
-      handleSelectTrainer('marwan');
+    if (suggestedWeaknesses.length > 0 && attachedWeaknesses.length === 0) {
+      setAttachedWeaknesses(suggestedWeaknesses.slice(0, 4));
     }
-  }, [preselectedTrainerName]);
+  }, [suggestedWeaknesses, attachedWeaknesses.length]);
+
+  // Preselect trainer from prop or trackLock
+  useEffect(() => {
+    if (preselectedTrainerName) {
+      if (preselectedTrainerName.toLowerCase().includes('mohamed')) {
+        handleSelectTrainer('mohamed');
+        return;
+      }
+      if (preselectedTrainerName.toLowerCase().includes('marwan')) {
+        handleSelectTrainer('marwan');
+        return;
+      }
+    }
+    if (trackLock) {
+      const isFrenchOrArabic =
+        trackLock.trackKey === 'nafes' ||
+        trackLock.trackKey === 'qiyas' ||
+        trackLock.trackKey === 'french';
+      const tid = isFrenchOrArabic ? 'mohamed' : 'marwan';
+      setSelectedTrainerId(tid);
+      if (tid === 'mohamed') {
+        setLanguage(trackLock.trackKey === 'french' ? 'Français' : 'العربية');
+        setCurriculum(
+          trackLock.trackKey === 'nafes'
+            ? 'NAFES (ETEC Grade 3/6/9)'
+            : trackLock.trackKey === 'qiyas'
+              ? 'Qudurat & Tahsili (قياس)'
+              : 'Baccalauréat Français (AEFE)'
+        );
+      } else {
+        setLanguage('English');
+        setCurriculum(
+          trackLock.trackKey === 'ib'
+            ? 'IB Diploma (Math AA / Physics / Chem)'
+            : trackLock.trackKey === 'british'
+              ? 'Cambridge IGCSE & A-Level'
+              : 'Digital SAT & ACT'
+        );
+      }
+    }
+  }, [preselectedTrainerName, trackLock]);
 
   const activeTrainer = trainers.find((tr) => tr.id === selectedTrainerId) || trainers[0];
+
+  // Curated themes from curriculum lessons matching active trainer / curriculum
+  const suggestedThemes = useMemo(() => {
+    const matchingCourses = COURSE_MODULES.filter((c) => {
+      if (selectedTrainerId === 'mohamed') {
+        return c.leadTrainer.toLowerCase().includes('mohamed');
+      }
+      return c.leadTrainer.toLowerCase().includes('marwan');
+    });
+    const lessonTitles = matchingCourses.flatMap((c) =>
+      c.lessons.map((l) => `${c.subject}: ${l.title}`)
+    );
+    return lessonTitles.slice(0, 8);
+  }, [selectedTrainerId]);
 
   const handleSelectTrainer = (id: 'marwan' | 'mohamed') => {
     setSelectedTrainerId(id);
@@ -74,16 +201,64 @@ export function TutoringSection({
 
   if (!activeTrainer) return null;
 
-  const estimatedPrice =
-    sessionPackage === 'pack_5'
-      ? activeTrainer.packRateSar
-      : sessionPackage === 'intensive_90'
-        ? activeTrainer.hourlyRateSar + 70
-        : activeTrainer.hourlyRateSar;
+  const estimatedPrice = (() => {
+    if (durationMinutes === 30) return Math.round(activeTrainer.hourlyRateSar * 0.6);
+    if (durationMinutes === 90) return activeTrainer.hourlyRateSar + 70;
+    if (durationMinutes === 120) return activeTrainer.hourlyRateSar * 2 - 20;
+    if (durationMinutes === 300) return activeTrainer.packRateSar;
+    return activeTrainer.hourlyRateSar;
+  })();
+
+  const handleConnectGoogle = async () => {
+    setError('');
+    setGoogleConnecting(true);
+    try {
+      const authResult = await signInWithGoogleForMeet();
+      if (authResult) {
+        setGoogleEmail(authResult.user.email || authResult.user.displayName || 'Google Connecté');
+        setGoogleToken(authResult.accessToken);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Connexion Google annulée.');
+    } finally {
+      setGoogleConnecting(false);
+    }
+  };
+
+  const toggleWeakness = (item: string) => {
+    setAttachedWeaknesses((prev) =>
+      prev.includes(item) ? prev.filter((x) => x !== item) : [...prev, item]
+    );
+  };
+
+  const addCustomWeakness = () => {
+    const val = customWeakness.trim();
+    if (!val) return;
+    if (!attachedWeaknesses.includes(val)) {
+      setAttachedWeaknesses((prev) => [...prev, val]);
+    }
+    setCustomWeakness('');
+  };
+
+  const toggleTheme = (item: string) => {
+    setThemesToCover((prev) =>
+      prev.includes(item) ? prev.filter((x) => x !== item) : [...prev, item]
+    );
+  };
+
+  const addCustomTheme = () => {
+    const val = customTheme.trim();
+    if (!val) return;
+    if (!themesToCover.includes(val)) {
+      setThemesToCover((prev) => [...prev, val]);
+    }
+    setCustomTheme('');
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setMeetWarning('');
     setConfirmedBooking(null);
     if (!user || !token) {
       onRequireAuth();
@@ -92,22 +267,31 @@ export function TutoringSection({
 
     setSubmitting(true);
     try {
-      const res = await apiRequest<{ booking: BookingItem }>('/api/bookings', {
+      const activeGoogleToken = googleToken || getCachedGoogleAccessToken() || '';
+      const res = await apiRequest<{ booking: BookingItem; meetWarning?: string }>('/api/bookings', {
         method: 'POST',
         token,
+        headers: activeGoogleToken ? { 'x-google-access-token': activeGoogleToken } : undefined,
         body: {
           trainerId: activeTrainer.id,
           language,
           curriculum,
           subject,
-          sessionPackage,
+          durationMinutes,
           dateSlot,
           timeSlot,
           studentName: studentName || user.name,
+          attachedWeaknesses,
+          themesToCover,
+          paymentMethod,
           notes,
+          googleAccessToken: activeGoogleToken || undefined,
         },
       });
       setConfirmedBooking(res.booking);
+      if (res.meetWarning) {
+        setMeetWarning(res.meetWarning);
+      }
       onBookingCreated(res.booking);
       setNotes('');
     } catch (err: any) {
@@ -117,17 +301,54 @@ export function TutoringSection({
     }
   };
 
+  const handleGenerateMeetPostPayment = async () => {
+    if (!confirmedBooking || !token) return;
+    setError('');
+    setMeetWarning('');
+    setGeneratingMeet(true);
+    try {
+      let activeGoogleToken = googleToken || getCachedGoogleAccessToken();
+      if (!activeGoogleToken) {
+        const authResult = await signInWithGoogleForMeet();
+        if (authResult) {
+          activeGoogleToken = authResult.accessToken;
+          setGoogleToken(authResult.accessToken);
+          setGoogleEmail(authResult.user.email || authResult.user.displayName || 'Google Connecté');
+        }
+      }
+      if (!activeGoogleToken) {
+        throw new Error('Connexion Google requise pour générer la salle Google Meet.');
+      }
+
+      const res = await apiRequest<{ booking: BookingItem }>(
+        `/api/bookings/${encodeURIComponent(confirmedBooking.id)}/generate-meet`,
+        {
+          method: 'POST',
+          token,
+          headers: { 'x-google-access-token': activeGoogleToken },
+          body: { googleAccessToken: activeGoogleToken },
+        }
+      );
+      setConfirmedBooking(res.booking);
+      onBookingUpdated?.(res.booking);
+    } catch (err: any) {
+      setError(err.message || 'Impossible de générer le lien Google Meet.');
+    } finally {
+      setGeneratingMeet(false);
+    }
+  };
+
   return (
     <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14">
       <div className="mb-10 max-w-3xl">
-        <p className="text-xs font-semibold tracking-wide text-emerald-800 mb-2">
+        <p className="text-xs font-semibold tracking-wide text-[#0B6E8C] mb-2">
           {lang === 'ar'
-            ? 'التدريب المباشر عبر الإنترنت · بتوقيت الرياض'
+            ? 'التدريب المباشر عبر Google Meet · بتوقيت الرياض'
             : lang === 'en'
-              ? 'Paid Online Coaching · Riyadh Time (AST)'
-              : 'Tutorat en Ligne Payant · Heure de Riyad (AST)'}
+              ? 'Paid Private Coaching via Google Meet · Riyadh Time (AST)'
+              : 'Tutorat Privé en Ligne via Google Meet · Heure de Riyad (AST)'}
         </p>
-        <h2 className="font-display text-3xl sm:text-4xl font-semibold text-slate-900 text-balance">
+        <h2 className="font-display text-3xl sm:text-4xl font-bold text-[#0F2537] text-balance">
           {t.tutorsTitle}
         </h2>
         <p className="mt-3 text-base text-slate-600 leading-relaxed">{t.tutorsSubtitle}</p>
@@ -143,8 +364,8 @@ export function TutoringSection({
           return (
             <div
               key={trainer.id}
-              className={`bg-white rounded-xl border p-6 sm:p-8 flex flex-col justify-between transition-colors ${
-                isSelected ? 'border-emerald-800 shadow-sm' : 'border-slate-200'
+              className={`bg-white rounded-2xl border p-6 sm:p-8 flex flex-col justify-between transition-colors ${
+                isSelected ? 'border-[#0B6E8C] shadow-sm ring-1 ring-[#0B6E8C]/20' : 'border-slate-200'
               }`}
             >
               <div>
@@ -158,11 +379,11 @@ export function TutoringSection({
                     />
                   </div>
                   <div>
-                    <div className="text-xs font-semibold text-emerald-800 mb-1 flex items-center gap-1.5">
+                    <div className="text-xs font-semibold text-[#0B6E8C] mb-1 flex items-center gap-1.5">
                       <Globe2 className="w-3.5 h-3.5" />
                       <span>{trainer.languages.join(' · ')}</span>
                     </div>
-                    <h3 className="font-display text-2xl font-semibold text-slate-900">
+                    <h3 className="font-display text-2xl font-semibold text-[#0F2537]">
                       {trainer.name}
                     </h3>
                     <p className="text-xs font-medium text-slate-600 mt-0.5">{trainer.roleTitle}</p>
@@ -189,11 +410,11 @@ export function TutoringSection({
 
               <div className="mt-6 pt-5 border-t border-slate-200 flex flex-wrap items-center justify-between gap-4">
                 <div className="text-xs text-slate-600 tabular-nums">
-                  <span className="font-mono text-base font-semibold text-slate-900">
+                  <span className="font-mono text-base font-semibold text-[#0F2537]">
                     {trainer.hourlyRateSar} SAR
                   </span>{' '}
-                  / 60 min · Pack 5 :{' '}
-                  <span className="font-mono font-semibold text-slate-900">
+                  / 60 min · Pack 5h :{' '}
+                  <span className="font-mono font-semibold text-[#0F2537]">
                     {trainer.packRateSar} SAR
                   </span>
                 </div>
@@ -201,10 +422,10 @@ export function TutoringSection({
                 <button
                   type="button"
                   onClick={() => handleSelectTrainer(trainer.id)}
-                  className={`px-4 py-2 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  className={`px-4 py-2 text-xs font-semibold rounded-xl transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                     isSelected
-                      ? 'bg-emerald-800 text-white'
-                      : 'bg-slate-900 hover:bg-emerald-900 text-white'
+                      ? 'bg-[#0B6E8C] text-white'
+                      : 'bg-[#0F2537] hover:bg-[#0B6E8C] text-white'
                   }`}
                 >
                   {isSelected
@@ -221,178 +442,479 @@ export function TutoringSection({
         })}
       </div>
 
-      {/* Live Session Booking Form */}
-      <div className="bg-white border border-slate-200 rounded-xl p-6 sm:p-8">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 mb-6 border-b border-slate-200">
+      {/* Live Session Booking + Google Meet Form */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-xs space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-200">
           <div>
-            <h3 className="font-display text-2xl font-semibold text-slate-900">
+            <h3 className="font-display text-2xl font-bold text-[#0F2537]">
               {lang === 'ar'
-                ? `حجز حصة مباشرة مع ${activeTrainer.name}`
+                ? `حجز حصة خاصة عبر Google Meet مع ${activeTrainer.name}`
                 : lang === 'en'
-                  ? `Schedule Live Session with ${activeTrainer.name}`
-                  : `Réserver une séance en ligne avec ${activeTrainer.name}`}
+                  ? `Schedule Paid Google Meet Coaching with ${activeTrainer.name}`
+                  : `Réserver une formation privée Google Meet avec ${activeTrainer.name}`}
             </h3>
             <p className="text-xs text-slate-600 mt-1">
-              {activeTrainer.id === 'marwan'
-                ? 'Langue d’enseignement : Anglais (SAT, AP, IB, IGCSE, A-Level, GAT English)'
-                : 'Langues d’enseignement : Français & Arabe (Baccalauréat, Brevet, IB French B, Nafes, Qudurat, Tahsili)'}
+              {lang === 'ar'
+                ? 'اختر التاريخ والوقت والمدة، وأرفق نقاط الضعف والدروس المطلوبة؛ يُرسل التقرير للمدرب ويُنشأ رابط Google Meet فور الدفع.'
+                : lang === 'en'
+                  ? 'Select date, time & duration, attach weaknesses and target lessons; a detailed report is sent to the teacher with an instant Google Meet link generated after payment.'
+                  : 'Choisissez la date, l’horaire, la durée, vos points faibles et les leçons à travailler : le rapport est transmis au formateur et le lien Google Meet est généré après paiement.'}
             </p>
           </div>
-          <div className="font-mono text-xl font-semibold text-emerald-800 tabular-nums">
+          <div className="font-mono text-2xl font-bold text-[#0B6E8C] tabular-nums shrink-0">
             {estimatedPrice} SAR
           </div>
         </div>
 
+        {/* Confirmed Booking + Post-Payment Google Meet Result */}
         {confirmedBooking && (
-          <div className="mb-6 p-4 rounded-xl bg-emerald-50 border border-emerald-200 flex items-start gap-3">
-            <CheckCircle2 className="w-5 h-5 text-emerald-800 shrink-0 mt-0.5" />
-            <div className="text-sm text-emerald-950">
-              <strong>
-                {lang === 'ar'
-                  ? 'تم تأكيد الحجز!'
-                  : lang === 'en'
-                    ? 'Booking Confirmed!'
-                    : 'Réservation confirmée !'}
-              </strong>{' '}
-              {confirmedBooking.trainerName} — {confirmedBooking.curriculum} ({confirmedBooking.subject}) ·{' '}
-              {confirmedBooking.dateSlot} · {confirmedBooking.timeSlot} ·{' '}
-              <span className="font-mono">{confirmedBooking.priceSar} SAR</span>
+          <div className="p-5 sm:p-6 rounded-2xl bg-emerald-50 border border-emerald-200 space-y-4">
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
+              <div className="space-y-1 text-sm text-emerald-950">
+                <div className="font-semibold">
+                  Paiement confirmé ({confirmedBooking.paymentReference}) · Rapport transmis à {confirmedBooking.trainerName}
+                </div>
+                <div className="text-xs text-emerald-900 tabular-nums">
+                  {confirmedBooking.curriculum} ({confirmedBooking.subject}) · {confirmedBooking.dateSlot} ·{' '}
+                  {confirmedBooking.timeSlot} · {confirmedBooking.durationLabel} ·{' '}
+                  <strong className="font-mono">{confirmedBooking.priceSar} SAR</strong>
+                </div>
+                {confirmedBooking.attachedWeaknesses.length > 0 && (
+                  <div className="text-xs text-emerald-900 pt-1">
+                    <strong>Points faibles envoyés :</strong> {confirmedBooking.attachedWeaknesses.join(' · ')}
+                  </div>
+                )}
+                {confirmedBooking.themesToCover.length > 0 && (
+                  <div className="text-xs text-emerald-900">
+                    <strong>Thèmes &amp; leçons :</strong> {confirmedBooking.themesToCover.join(' · ')}
+                  </div>
+                )}
+              </div>
             </div>
+
+            {confirmedBooking.meetLink ? (
+              <div className="pt-3 border-t border-emerald-200 flex flex-wrap items-center gap-3">
+                <a
+                  href={confirmedBooking.meetLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2.5 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2"
+                >
+                  <Video className="w-4 h-4" />
+                  <span>Rejoindre la salle Google Meet</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+                <span className="font-mono text-xs text-emerald-900 bg-white px-3 py-2 rounded-lg border border-emerald-200 select-all">
+                  {confirmedBooking.meetLink}
+                </span>
+                {confirmedBooking.calendarEventLink && (
+                  <a
+                    href={confirmedBooking.calendarEventLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3.5 py-2 bg-white border border-emerald-300 text-emerald-900 text-xs font-semibold rounded-xl inline-flex items-center gap-1.5"
+                  >
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span>Google Agenda</span>
+                  </a>
+                )}
+              </div>
+            ) : (
+              <div className="pt-3 border-t border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <span className="text-xs text-emerald-900">
+                  {meetWarning
+                    ? `${meetWarning} — Cliquez ci-contre pour générer le lien Google Meet.`
+                    : 'Votre paiement est validé. Connectez Google pour générer le lien Google Meet partagé avec votre formateur.'}
+                </span>
+                <button
+                  type="button"
+                  disabled={generatingMeet}
+                  onClick={handleGenerateMeetPostPayment}
+                  className="px-4 py-2.5 bg-[#0F2537] hover:bg-[#0B6E8C] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2 shrink-0 cursor-pointer"
+                >
+                  <Video className="w-4 h-4" />
+                  <span>{generatingMeet ? 'Création Google Meet...' : 'Générer le lien Google Meet'}</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
 
         {error && (
-          <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 text-sm text-red-900">
+          <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-sm text-red-900">
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              {lang === 'ar' ? 'اسم الطالب' : lang === 'en' ? 'Student Name' : 'Nom de l’élève'}
-            </label>
-            <input
-              type="text"
-              required
-              value={studentName}
-              onChange={(e) => setStudentName(e.target.value)}
-              placeholder="Youssef Al-Harbi"
-              className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-700"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              {lang === 'ar' ? 'لغة الحصة' : lang === 'en' ? 'Instruction Language' : 'Langue du cours'}
-            </label>
-            <select
-              value={language}
-              onChange={(e) =>
-                setLanguage(e.target.value as 'English' | 'Français' | 'العربية')
-              }
-              className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-700"
-            >
-              {activeTrainer.languages.map((l) => (
-                <option key={l} value={l}>
-                  {l}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              {lang === 'ar' ? 'البرنامج / الاختبار' : lang === 'en' ? 'Curriculum' : 'Programme d’examen'}
-            </label>
-            <select
-              value={curriculum}
-              onChange={(e) => setCurriculum(e.target.value)}
-              className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-700"
-            >
-              {activeTrainer.curricula.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              {lang === 'ar' ? 'المادة' : lang === 'en' ? 'Subject' : 'Matière'}
-            </label>
-            <input
-              type="text"
-              required
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              placeholder="Mathématiques / Physics / Qudurat"
-              className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-700"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              {lang === 'ar' ? 'الباقة' : lang === 'en' ? 'Session Format' : 'Formule'}
-            </label>
-            <select
-              value={sessionPackage}
-              onChange={(e) =>
-                setSessionPackage(e.target.value as 'single_60' | 'intensive_90' | 'pack_5')
-              }
-              className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-700"
-            >
-              <option value="single_60">
-                Séance Individuelle 60 min ({activeTrainer.hourlyRateSar} SAR)
-              </option>
-              <option value="intensive_90">
-                Coaching Intensif Examen 90 min ({activeTrainer.hourlyRateSar + 70} SAR)
-              </option>
-              <option value="pack_5">
-                Pack 5 Séances ({activeTrainer.packRateSar} SAR)
-              </option>
-            </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Row 1: Student, Language, Curriculum */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                {lang === 'ar' ? 'التاريخ' : lang === 'en' ? 'Date' : 'Date'}
+                {lang === 'ar' ? 'اسم الطالب' : lang === 'en' ? 'Student Name' : 'Nom de l’élève'}
               </label>
               <input
-                type="date"
+                type="text"
                 required
-                value={dateSlot}
-                onChange={(e) => setDateSlot(e.target.value)}
-                className="w-full px-3 py-2.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                value={studentName}
+                onChange={(e) => setStudentName(e.target.value)}
+                placeholder="Youssef Al-Harbi"
+                className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0B6E8C]"
               />
             </div>
+
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                {lang === 'ar' ? 'الوقت' : lang === 'en' ? 'Time (AST)' : 'Créneau'}
+                {lang === 'ar' ? 'لغة الحصة' : lang === 'en' ? 'Instruction Language' : 'Langue du cours'}
               </label>
               <select
-                value={timeSlot}
-                onChange={(e) => setTimeSlot(e.target.value)}
-                className="w-full px-3 py-2.5 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                value={language}
+                onChange={(e) =>
+                  setLanguage(e.target.value as 'English' | 'Français' | 'العربية')
+                }
+                className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-[#0B6E8C]"
               >
-                {activeTrainer.availabilitySlots.map((slot) => (
-                  <option key={slot} value={slot}>
-                    {slot}
+                {activeTrainer.languages.map((l) => (
+                  <option key={l} value={l}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                {lang === 'ar' ? 'البرنامج / الاختبار' : lang === 'en' ? 'Curriculum' : 'Programme d’examen'}
+              </label>
+              <select
+                value={curriculum}
+                onChange={(e) => setCurriculum(e.target.value)}
+                className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-[#0B6E8C]"
+              >
+                {activeTrainer.curricula.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
                   </option>
                 ))}
               </select>
             </div>
           </div>
 
-          <div className="md:col-span-2">
+          {/* Row 2: Subject, Exact Duration, Date & Time */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                {lang === 'ar' ? 'المادة' : lang === 'en' ? 'Subject' : 'Matière'}
+              </label>
+              <input
+                type="text"
+                required
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                placeholder="Mathématiques / Physics / Qudurat"
+                className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0B6E8C]"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                {lang === 'ar' ? 'مدة التدريب (بالدقائق / الساعات)' : lang === 'en' ? 'Training Duration (min / hours)' : 'Durée de formation (minutes / heures)'}
+              </label>
+              <select
+                value={durationMinutes}
+                onChange={(e) => setDurationMinutes(Number(e.target.value) as 30 | 60 | 90 | 120 | 300)}
+                className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-[#0B6E8C]"
+              >
+                {DURATION_OPTIONS.map((opt) => {
+                  const p =
+                    opt.minutes === 30
+                      ? Math.round(activeTrainer.hourlyRateSar * 0.6)
+                      : opt.minutes === 90
+                        ? activeTrainer.hourlyRateSar + 70
+                        : opt.minutes === 120
+                          ? activeTrainer.hourlyRateSar * 2 - 20
+                          : opt.minutes === 300
+                            ? activeTrainer.packRateSar
+                            : activeTrainer.hourlyRateSar;
+                  const lbl = lang === 'ar' ? opt.labelAr : lang === 'en' ? opt.labelEn : opt.labelFr;
+                  return (
+                    <option key={opt.minutes} value={opt.minutes}>
+                      {lbl} — {p} SAR
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  {lang === 'ar' ? 'التاريخ' : lang === 'en' ? 'Date' : 'Date souhaitée'}
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={dateSlot}
+                  onChange={(e) => setDateSlot(e.target.value)}
+                  className="w-full px-3 py-2.5 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0B6E8C]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  {lang === 'ar' ? 'الوقت' : lang === 'en' ? 'Time (AST)' : 'Horaire (AST)'}
+                </label>
+                <select
+                  value={timeSlot}
+                  onChange={(e) => setTimeSlot(e.target.value)}
+                  className="w-full px-3 py-2.5 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-[#0B6E8C]"
+                >
+                  {activeTrainer.availabilitySlots.map((slot) => (
+                    <option key={slot} value={slot}>
+                      {slot}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Row 3: Weaknesses & Target Lessons/Themes sent to Teacher */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2 border-t border-slate-200">
+            <div className="space-y-3">
+              <div className="text-xs font-semibold text-[#0F2537]">
+                {lang === 'ar'
+                  ? 'نقاط الضعف المرفقة في تقرير المدرب'
+                  : lang === 'en'
+                    ? 'Weaknesses Sent to Teacher Report'
+                    : 'Points faibles transmis au formateur'}
+              </div>
+
+              {suggestedWeaknesses.length > 0 && (
+                <div className="space-y-1.5">
+                  {suggestedWeaknesses.map((w) => {
+                    const checked = attachedWeaknesses.includes(w);
+                    return (
+                      <label
+                        key={w}
+                        className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-xs cursor-pointer transition-colors ${
+                          checked
+                            ? 'bg-amber-50 border-amber-300 text-amber-950'
+                            : 'bg-[#F8FAFC] border-slate-200 text-slate-700'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleWeakness(w)}
+                          className="mt-0.5 accent-[#0B6E8C]"
+                        />
+                        <span>{w}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+
+              {attachedWeaknesses
+                .filter((w) => !suggestedWeaknesses.includes(w))
+                .map((w) => (
+                  <label
+                    key={w}
+                    className="flex items-start gap-2.5 p-2.5 rounded-xl border bg-amber-50 border-amber-300 text-amber-950 text-xs cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked
+                      onChange={() => toggleWeakness(w)}
+                      className="mt-0.5 accent-[#0B6E8C]"
+                    />
+                    <span>{w}</span>
+                  </label>
+                ))}
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={customWeakness}
+                  onChange={(e) => setCustomWeakness(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addCustomWeakness();
+                    }
+                  }}
+                  placeholder="Ajouter un point faible (ex : Fractions, Rédaction)..."
+                  className="flex-1 px-3 py-2 text-xs border border-slate-300 rounded-xl"
+                />
+                <button
+                  type="button"
+                  onClick={addCustomWeakness}
+                  className="px-3 py-2 border border-slate-300 hover:border-[#0B6E8C] rounded-xl text-xs font-semibold text-[#0F2537] inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Ajouter</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="text-xs font-semibold text-[#0F2537]">
+                {lang === 'ar'
+                  ? 'الدروس والمواضيع المطلوب العمل عليها'
+                  : lang === 'en'
+                    ? 'Lessons & Themes to Cover in This Coaching'
+                    : 'Thèmes & Leçons sur lesquels effectuer la formation'}
+              </div>
+
+              <div className="grid grid-cols-1 gap-1.5 max-h-56 overflow-y-auto pe-1">
+                {suggestedThemes.map((th) => {
+                  const checked = themesToCover.includes(th);
+                  return (
+                    <label
+                      key={th}
+                      className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-xs cursor-pointer transition-colors ${
+                        checked
+                          ? 'bg-[#EEF5F9] border-[#0B6E8C] text-[#0F2537]'
+                          : 'bg-[#F8FAFC] border-slate-200 text-slate-700'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleTheme(th)}
+                        className="mt-0.5 accent-[#0B6E8C]"
+                      />
+                      <span>{th}</span>
+                    </label>
+                  );
+                })}
+                {themesToCover
+                  .filter((th) => !suggestedThemes.includes(th))
+                  .map((th) => (
+                    <label
+                      key={th}
+                      className="flex items-start gap-2.5 p-2.5 rounded-xl border bg-[#EEF5F9] border-[#0B6E8C] text-[#0F2537] text-xs cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked
+                        onChange={() => toggleTheme(th)}
+                        className="mt-0.5 accent-[#0B6E8C]"
+                      />
+                      <span>{th}</span>
+                    </label>
+                  ))}
+              </div>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={customTheme}
+                  onChange={(e) => setCustomTheme(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addCustomTheme();
+                    }
+                  }}
+                  placeholder="Ajouter un thème ou chapitre précis..."
+                  className="flex-1 px-3 py-2 text-xs border border-slate-300 rounded-xl"
+                />
+                <button
+                  type="button"
+                  onClick={addCustomTheme}
+                  className="px-3 py-2 border border-slate-300 hover:border-[#0B6E8C] rounded-xl text-xs font-semibold text-[#0F2537] inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Ajouter</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Row 4: Payment & Google Workspace Connect for Instant Meet Link */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 pt-4 border-t border-slate-200 items-end">
+            <div className="lg:col-span-4">
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                {lang === 'ar' ? 'وسيلة الدفع' : lang === 'en' ? 'Payment Method' : 'Moyen de paiement'}
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {['Mada', 'Visa / MC', 'Apple Pay'].map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setPaymentMethod(m)}
+                    className={`px-2.5 py-2.5 rounded-xl border text-xs font-semibold cursor-pointer ${
+                      paymentMethod === m
+                        ? 'border-[#0B6E8C] bg-[#EEF5F9] text-[#0F2537]'
+                        : 'border-slate-200 text-slate-700'
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="lg:col-span-4">
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Google Meet &amp; Google Calendar (lien après paiement)
+              </label>
+              {googleToken ? (
+                <div className="px-3.5 py-2.5 rounded-xl border border-emerald-300 bg-emerald-50 text-xs font-semibold text-emerald-900 flex items-center justify-between gap-2">
+                  <span className="truncate">Connecté : {googleEmail}</span>
+                  <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={googleConnecting}
+                  onClick={handleConnectGoogle}
+                  className="gsi-material-button w-full"
+                >
+                  <div className="gsi-material-button-content-wrapper">
+                    <div className="gsi-material-button-icon">
+                      <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" style={{ display: 'block' }}>
+                        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+                      </svg>
+                    </div>
+                    <span>{googleConnecting ? 'Connexion Google...' : 'Sign in with Google (Meet)'}</span>
+                  </div>
+                </button>
+              )}
+            </div>
+
+            <div className="lg:col-span-4">
+              <button
+                type="submit"
+                disabled={submitting}
+                className="w-full py-3 px-5 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-sm font-semibold rounded-xl transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
+              >
+                <CreditCard className="w-4 h-4" />
+                <span>
+                  {submitting
+                    ? 'Paiement & Création Meet...'
+                    : lang === 'ar'
+                      ? `دفع ${estimatedPrice} ر.س وإنشاء Google Meet`
+                      : lang === 'en'
+                        ? `Pay ${estimatedPrice} SAR & Create Meet`
+                        : `Payer ${estimatedPrice} SAR & Réserver`}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">
               {lang === 'ar'
-                ? 'أهداف الحصة أو الصعوبات المحددة'
+                ? 'ملاحظات إضافية للمدرب'
                 : lang === 'en'
-                  ? 'Exam Goals & Specific Topics'
-                  : 'Objectifs & Chapitres à travailler'}
+                  ? 'Additional Notes for Teacher'
+                  : 'Précisions complémentaires pour le formateur'}
             </label>
             <input
               type="text"
@@ -402,30 +924,11 @@ export function TutoringSection({
                 lang === 'ar'
                   ? 'مثال: التحضير لاختبار نافس أو مراجعة التكامل'
                   : lang === 'en'
-                    ? 'e.g. SAT Module 2 pacing, IB Paper 1 Induction'
-                    : 'Ex : Préparation examen blanc IB, révision récurrence ou Qudurat'
+                    ? 'e.g. Target exam date or specific exercises to review'
+                    : 'Ex : Objectif de note visé ou exercices spécifiques à préparer'
               }
-              className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-700"
+              className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0B6E8C]"
             />
-          </div>
-
-          <div className="flex items-end">
-            <button
-              type="submit"
-              disabled={submitting}
-              className="w-full py-2.5 px-5 bg-emerald-800 hover:bg-emerald-900 text-white text-sm font-semibold rounded-lg transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
-            >
-              <CalendarCheck className="w-4 h-4" />
-              <span>
-                {submitting
-                  ? '...'
-                  : lang === 'ar'
-                    ? 'تأكيد الحجز المدفوع'
-                    : lang === 'en'
-                      ? 'Confirm Paid Booking'
-                      : 'Confirmer la réservation'}
-              </span>
-            </button>
           </div>
         </form>
       </div>

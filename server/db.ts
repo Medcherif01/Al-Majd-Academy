@@ -7,11 +7,43 @@ export interface UserRecord {
   name: string;
   role: 'student' | 'parent';
   preferredTrack: string;
+  lockedGrade: string | null;
+  lockedCurriculum: string | null;
+  lockedTrackKey: string | null;
+  trialStartedAt: string | null;
+  trialDurationSeconds: number;
+  assignedSkills: string[];
+  teacherStrengths: string[];
+  teacherWeaknesses: string[];
+  teacherFeedbackSummary: string;
   passwordHash: string;
   salt: string;
   unlockedPapers: string[];
   enrolledCourses: string[];
   hasAllAccessPass: boolean;
+  createdAt: string;
+}
+
+export interface DemoReportRecord {
+  id: string;
+  userId: string;
+  teacherId: 'marwan' | 'mohamed';
+  studentName: string;
+  studentEmail: string;
+  gradeLevel: string;
+  curriculum: string;
+  language: 'Français' | 'English' | 'العربية';
+  overallScore: number;
+  levelLabel: string;
+  strengths: string[];
+  weaknesses: string[];
+  missingGaps: string[];
+  summaryText: string;
+  attributedSkills: string[];
+  teacherFeedback: string;
+  status: 'new' | 'reviewed';
+  reviewedBy: string;
+  reviewedAt: string | null;
   createdAt: string;
 }
 
@@ -95,8 +127,17 @@ export interface BookingRecord {
   curriculum: string;
   subject: string;
   sessionPackage: string;
+  durationMinutes: number;
+  durationLabel: string;
   dateSlot: string;
   timeSlot: string;
+  attachedWeaknesses: string[];
+  themesToCover: string[];
+  paymentMethod: string;
+  paymentReference: string;
+  paid: boolean;
+  meetLink: string;
+  calendarEventLink: string;
   priceSar: number;
   status: 'confirmed' | 'pending';
   notes: string;
@@ -157,6 +198,15 @@ const UserSchema = new Schema(
     name: { type: String, required: true, trim: true },
     role: { type: String, enum: ['student', 'parent'], default: 'student' },
     preferredTrack: { type: String, default: 'ib' },
+    lockedGrade: { type: String, default: null },
+    lockedCurriculum: { type: String, default: null },
+    lockedTrackKey: { type: String, default: null },
+    trialStartedAt: { type: String, default: null },
+    trialDurationSeconds: { type: Number, default: 1800 },
+    assignedSkills: { type: [String], default: [] },
+    teacherStrengths: { type: [String], default: [] },
+    teacherWeaknesses: { type: [String], default: [] },
+    teacherFeedbackSummary: { type: String, default: '' },
     passwordHash: { type: String, required: true },
     salt: { type: String, required: true },
     unlockedPapers: { type: [String], default: [] },
@@ -177,8 +227,17 @@ const BookingSchema = new Schema(
     curriculum: { type: String, required: true },
     subject: { type: String, required: true },
     sessionPackage: { type: String, required: true },
+    durationMinutes: { type: Number, default: 60 },
+    durationLabel: { type: String, default: '60 min (1 heure)' },
     dateSlot: { type: String, required: true },
     timeSlot: { type: String, required: true },
+    attachedWeaknesses: { type: [String], default: [] },
+    themesToCover: { type: [String], default: [] },
+    paymentMethod: { type: String, default: 'Mada / Visa' },
+    paymentReference: { type: String, default: '' },
+    paid: { type: Boolean, default: true },
+    meetLink: { type: String, default: '' },
+    calendarEventLink: { type: String, default: '' },
     priceSar: { type: Number, required: true },
     status: { type: String, enum: ['confirmed', 'pending'], default: 'confirmed' },
     notes: { type: String, default: '' },
@@ -321,12 +380,38 @@ const WritingSubmissionSchema = new Schema(
   { timestamps: true }
 );
 
+const DemoReportSchema = new Schema(
+  {
+    userId: { type: String, required: true, index: true },
+    teacherId: { type: String, enum: ['marwan', 'mohamed'], required: true, index: true },
+    studentName: { type: String, required: true },
+    studentEmail: { type: String, default: '' },
+    gradeLevel: { type: String, required: true },
+    curriculum: { type: String, required: true },
+    language: { type: String, required: true },
+    overallScore: { type: Number, required: true },
+    levelLabel: { type: String, required: true },
+    strengths: { type: [String], default: [] },
+    weaknesses: { type: [String], default: [] },
+    missingGaps: { type: [String], default: [] },
+    summaryText: { type: String, required: true },
+    attributedSkills: { type: [String], default: [] },
+    teacherFeedback: { type: String, default: '' },
+    status: { type: String, enum: ['new', 'reviewed'], default: 'new' },
+    reviewedBy: { type: String, default: '' },
+    reviewedAt: { type: String, default: null },
+  },
+  { timestamps: true }
+);
+
 const RosterStudentModel: Model<any> =
   mongoose.models.RosterStudent || mongoose.model('RosterStudent', RosterStudentSchema);
 const WeeklyMissionModel: Model<any> =
   mongoose.models.WeeklyMission || mongoose.model('WeeklyMission', WeeklyMissionSchema);
 const WritingSubmissionModel: Model<any> =
   mongoose.models.WritingSubmission || mongoose.model('WritingSubmission', WritingSubmissionSchema);
+const DemoReportModel: Model<any> =
+  mongoose.models.DemoReport || mongoose.model('DemoReport', DemoReportSchema);
 
 // Cached connection for Vercel serverless cold-starts
 let connectionPromise: Promise<boolean> | null = null;
@@ -376,6 +461,67 @@ const memoryOrders: OrderRecord[] = [];
 const memoryExams: GeneratedExamRecord[] = [];
 const memoryProgress = new Map<string, ProgressRecord>();
 const memoryPlacements: PlacementResultRecord[] = [];
+const memoryDemoReports: DemoReportRecord[] = [
+  {
+    id: 'demo-rep-1',
+    userId: 'seed-stu-1',
+    teacherId: 'marwan',
+    studentName: 'Youssef Ahmed Al-Harbi',
+    studentEmail: 'youssef.harbi@riyadh-intl.sa',
+    gradeLevel: 'grade-10',
+    curriculum: 'IGCSE & A-Level',
+    language: 'English',
+    overallScore: 60,
+    levelLabel: 'Developing Proficiency — Targeted Gaps to Close',
+    strengths: [
+      'Mastery of coordinate geometry and perpendicular slopes',
+      'Fluent manipulation of indices and negative exponents',
+      'Strong awareness of official exam board command terms',
+    ],
+    weaknesses: ['Quadratics & Factoring', 'Physics & Kinematics Rules'],
+    missingGaps: [
+      'Applying the discriminant b^2 - 4ac = 0 for tangent/single roots',
+      'Acceleration formula a = (v - u)/t combined with CAIE significant figure rules',
+    ],
+    summaryText:
+      'In this Grade 10 IGCSE diagnostic, the student scored 60%. Priority gaps were identified in Quadratic Discriminants and Kinematics Rules.',
+    attributedSkills: [],
+    teacherFeedback: '',
+    status: 'new',
+    reviewedBy: '',
+    reviewedAt: null,
+    createdAt: new Date(Date.now() - 3600 * 1000).toISOString(),
+  },
+  {
+    id: 'demo-rep-2',
+    userId: 'seed-stu-2',
+    teacherId: 'mohamed',
+    studentName: 'Lina Al-Qahtani',
+    studentEmail: 'lina.qahtani@aefe-riyadh.sa',
+    gradeLevel: 'grade-9',
+    curriculum: 'NAFES (ETEC)',
+    language: 'العربية',
+    overallScore: 60,
+    levelLabel: 'مستوى متوسط — يحتاج إلى سد بعض الفجوات',
+    strengths: [
+      'إتقان مسائل النسب المئوية العكسية بدون آلة حاسبة',
+      'فهم تصميم التجارب العلمية وتحديد المتغيرات',
+    ],
+    weaknesses: ['الهندسة والقياس', 'تفسير البيانات'],
+    missingGaps: [
+      'الربط بين قانون المحيط 2×(الطول+العرض) وقانون المساحة',
+      'استخدام قاعدة المجموع الكلي = الوسط × العدد عند إضافة قيم جديدة',
+    ],
+    summaryText:
+      'حصلت الطالبة في تقييم نافس (الصف الثالث متوسط - Grade 9) على 60%. تركزت الصعوبات في الهندسة والقياس وتفسير البيانات.',
+    attributedSkills: [],
+    teacherFeedback: '',
+    status: 'new',
+    reviewedBy: '',
+    reviewedAt: null,
+    createdAt: new Date(Date.now() - 1800 * 1000).toISOString(),
+  },
+];
 
 const memoryRoster: RosterStudentRecord[] = [
   {
@@ -542,12 +688,94 @@ function mapUserDoc(doc: any): UserRecord {
     name: doc.name,
     role: doc.role,
     preferredTrack: doc.preferredTrack,
+    lockedGrade: doc.lockedGrade ?? null,
+    lockedCurriculum: doc.lockedCurriculum ?? null,
+    lockedTrackKey: doc.lockedTrackKey ?? null,
+    trialStartedAt: doc.trialStartedAt ?? null,
+    trialDurationSeconds: typeof doc.trialDurationSeconds === 'number' ? doc.trialDurationSeconds : 1800,
+    assignedSkills: Array.isArray(doc.assignedSkills) ? doc.assignedSkills : [],
+    teacherStrengths: Array.isArray(doc.teacherStrengths) ? doc.teacherStrengths : [],
+    teacherWeaknesses: Array.isArray(doc.teacherWeaknesses) ? doc.teacherWeaknesses : [],
+    teacherFeedbackSummary: doc.teacherFeedbackSummary || '',
     passwordHash: doc.passwordHash,
     salt: doc.salt,
     unlockedPapers: Array.isArray(doc.unlockedPapers) ? doc.unlockedPapers : [],
     enrolledCourses: Array.isArray(doc.enrolledCourses) ? doc.enrolledCourses : [],
     hasAllAccessPass: Boolean(doc.hasAllAccessPass),
     createdAt: doc.createdAt ? new Date(doc.createdAt).toISOString() : new Date().toISOString(),
+  };
+}
+
+function mapBookingDoc(d: any): BookingRecord {
+  return {
+    id: String(d._id),
+    userId: d.userId,
+    studentName: d.studentName,
+    contactEmail: d.contactEmail,
+    trainerId: d.trainerId,
+    trainerName: d.trainerName,
+    language: d.language,
+    curriculum: d.curriculum,
+    subject: d.subject,
+    sessionPackage: d.sessionPackage,
+    durationMinutes: d.durationMinutes ?? 60,
+    durationLabel: d.durationLabel || d.sessionPackage || '60 min',
+    dateSlot: d.dateSlot,
+    timeSlot: d.timeSlot,
+    attachedWeaknesses: Array.isArray(d.attachedWeaknesses) ? d.attachedWeaknesses : [],
+    themesToCover: Array.isArray(d.themesToCover) ? d.themesToCover : [],
+    paymentMethod: d.paymentMethod || 'Mada / Visa',
+    paymentReference: d.paymentReference || '',
+    paid: d.paid !== false,
+    meetLink: d.meetLink || '',
+    calendarEventLink: d.calendarEventLink || '',
+    priceSar: d.priceSar,
+    status: d.status,
+    notes: d.notes || '',
+    createdAt: new Date(d.createdAt).toISOString(),
+  };
+}
+
+function mapDemoReportDoc(d: any): DemoReportRecord {
+  return {
+    id: String(d._id),
+    userId: d.userId,
+    teacherId: d.teacherId,
+    studentName: d.studentName,
+    studentEmail: d.studentEmail || '',
+    gradeLevel: d.gradeLevel,
+    curriculum: d.curriculum,
+    language: d.language,
+    overallScore: d.overallScore,
+    levelLabel: d.levelLabel,
+    strengths: Array.isArray(d.strengths) ? d.strengths : [],
+    weaknesses: Array.isArray(d.weaknesses) ? d.weaknesses : [],
+    missingGaps: Array.isArray(d.missingGaps) ? d.missingGaps : [],
+    summaryText: d.summaryText,
+    attributedSkills: Array.isArray(d.attributedSkills) ? d.attributedSkills : [],
+    teacherFeedback: d.teacherFeedback || '',
+    status: d.status || 'new',
+    reviewedBy: d.reviewedBy || '',
+    reviewedAt: d.reviewedAt || null,
+    createdAt: new Date(d.createdAt).toISOString(),
+  };
+}
+
+export function computeUserEntitlements(user: UserRecord) {
+  const hasPaidAccess =
+    Boolean(user.hasAllAccessPass) ||
+    (Array.isArray(user.enrolledCourses) && user.enrolledCourses.length > 0);
+  const totalSec = user.trialDurationSeconds || 1800;
+  let trialSecondsRemaining = totalSec;
+  if (user.trialStartedAt) {
+    const elapsed = Math.floor((Date.now() - Date.parse(user.trialStartedAt)) / 1000);
+    trialSecondsRemaining = Math.max(0, totalSec - Math.max(0, elapsed));
+  }
+  const trialExpired = !hasPaidAccess && Boolean(user.trialStartedAt) && trialSecondsRemaining <= 0;
+  return {
+    hasPaidAccess,
+    trialSecondsRemaining,
+    trialExpired,
   };
 }
 
@@ -625,6 +853,42 @@ export const db = {
     const existing = memoryUsers.get(userId);
     if (!existing) return null;
     existing.enrolledCourses = Array.from(new Set([...existing.enrolledCourses, courseId]));
+    memoryUsers.set(userId, existing);
+    return existing;
+  },
+
+  async lockUserTrack(
+    userId: string,
+    gradeLevel: string,
+    curriculum: string,
+    trackKey: string
+  ): Promise<UserRecord | null> {
+    const nowIso = new Date().toISOString();
+    if (await connectDatabase()) {
+      const existing: any = await UserModel.findById(userId).lean();
+      if (!existing) return null;
+      // Preserve initial lock if already locked; start trial if not started
+      const updates: any = {};
+      if (!existing.lockedGrade) updates.lockedGrade = gradeLevel;
+      if (!existing.lockedCurriculum) updates.lockedCurriculum = curriculum;
+      if (!existing.lockedTrackKey) {
+        updates.lockedTrackKey = trackKey;
+        updates.preferredTrack = trackKey;
+      }
+      if (!existing.trialStartedAt) updates.trialStartedAt = nowIso;
+      if (Object.keys(updates).length === 0) return mapUserDoc(existing);
+      const updated = await UserModel.findByIdAndUpdate(userId, { $set: updates }, { new: true }).lean();
+      return updated ? mapUserDoc(updated) : null;
+    }
+    const existing = memoryUsers.get(userId);
+    if (!existing) return null;
+    if (!existing.lockedGrade) existing.lockedGrade = gradeLevel;
+    if (!existing.lockedCurriculum) existing.lockedCurriculum = curriculum;
+    if (!existing.lockedTrackKey) {
+      existing.lockedTrackKey = trackKey;
+      existing.preferredTrack = trackKey;
+    }
+    if (!existing.trialStartedAt) existing.trialStartedAt = nowIso;
     memoryUsers.set(userId, existing);
     return existing;
   },
@@ -733,26 +997,48 @@ export const db = {
   async getBookingsByUser(userId: string): Promise<BookingRecord[]> {
     if (await connectDatabase()) {
       const docs = await BookingModel.find({ userId }).sort({ createdAt: -1 }).lean();
-      return docs.map((d: any) => ({
-        id: String(d._id),
-        userId: d.userId,
-        studentName: d.studentName,
-        contactEmail: d.contactEmail,
-        trainerId: d.trainerId,
-        trainerName: d.trainerName,
-        language: d.language,
-        curriculum: d.curriculum,
-        subject: d.subject,
-        sessionPackage: d.sessionPackage,
-        dateSlot: d.dateSlot,
-        timeSlot: d.timeSlot,
-        priceSar: d.priceSar,
-        status: d.status,
-        notes: d.notes || '',
-        createdAt: new Date(d.createdAt).toISOString(),
-      }));
+      return docs.map(mapBookingDoc);
     }
     return memoryBookings.filter((b) => b.userId === userId);
+  },
+
+  async getBookingsByTrainer(trainerId?: 'marwan' | 'mohamed'): Promise<BookingRecord[]> {
+    if (await connectDatabase()) {
+      const filter = trainerId ? { trainerId } : {};
+      const docs = await BookingModel.find(filter).sort({ createdAt: -1 }).lean();
+      return docs.map(mapBookingDoc);
+    }
+    return trainerId ? memoryBookings.filter((b) => b.trainerId === trainerId) : memoryBookings;
+  },
+
+  async findBookingById(bookingId: string): Promise<BookingRecord | null> {
+    if (await connectDatabase()) {
+      if (!mongoose.isValidObjectId(bookingId)) return null;
+      const doc = await BookingModel.findById(bookingId).lean();
+      return doc ? mapBookingDoc(doc) : null;
+    }
+    return memoryBookings.find((b) => b.id === bookingId) || null;
+  },
+
+  async updateBookingMeetLinks(
+    bookingId: string,
+    meetLink: string,
+    calendarEventLink: string
+  ): Promise<BookingRecord | null> {
+    if (await connectDatabase()) {
+      if (!mongoose.isValidObjectId(bookingId)) return null;
+      const doc = await BookingModel.findByIdAndUpdate(
+        bookingId,
+        { $set: { meetLink, calendarEventLink } },
+        { new: true }
+      ).lean();
+      return doc ? mapBookingDoc(doc) : null;
+    }
+    const found = memoryBookings.find((b) => b.id === bookingId);
+    if (!found) return null;
+    found.meetLink = meetLink;
+    found.calendarEventLink = calendarEventLink;
+    return found;
   },
 
   async saveGeneratedExam(exam: Omit<GeneratedExamRecord, 'id' | 'createdAt'>): Promise<GeneratedExamRecord> {
@@ -1117,6 +1403,132 @@ export const db = {
     found.score = score;
     found.teacherFeedback = teacherFeedback;
     found.reviewedBy = reviewedBy;
+    return found;
+  },
+
+  // --- Demo Placement Reports & Teacher Skill Attribution ---
+  async createDemoReport(
+    report: Omit<DemoReportRecord, 'id' | 'createdAt'>
+  ): Promise<DemoReportRecord> {
+    if (await connectDatabase()) {
+      const doc = await DemoReportModel.create(report);
+      return mapDemoReportDoc(doc.toObject());
+    }
+    const record: DemoReportRecord = {
+      ...report,
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+    };
+    memoryDemoReports.unshift(record);
+    return record;
+  },
+
+  async getDemoReports(teacherId?: 'marwan' | 'mohamed'): Promise<DemoReportRecord[]> {
+    if (await connectDatabase()) {
+      const filter = teacherId ? { teacherId } : {};
+      let docs = await DemoReportModel.find(filter).sort({ createdAt: -1 }).lean();
+      if (docs.length === 0 && (await DemoReportModel.countDocuments()) === 0) {
+        await DemoReportModel.insertMany(
+          memoryDemoReports.map(({ id: _id, createdAt: _c, ...rest }) => rest)
+        );
+        docs = await DemoReportModel.find(filter).sort({ createdAt: -1 }).lean();
+      }
+      return docs.map(mapDemoReportDoc);
+    }
+    return teacherId
+      ? memoryDemoReports.filter((r) => r.teacherId === teacherId)
+      : memoryDemoReports;
+  },
+
+  async getLatestDemoReportForUser(userId: string): Promise<DemoReportRecord | null> {
+    if (await connectDatabase()) {
+      const doc = await DemoReportModel.findOne({ userId }).sort({ createdAt: -1 }).lean();
+      return doc ? mapDemoReportDoc(doc) : null;
+    }
+    return memoryDemoReports.find((r) => r.userId === userId) || null;
+  },
+
+  async attributeDemoReport(
+    reportId: string,
+    payload: {
+      strengths: string[];
+      weaknesses: string[];
+      attributedSkills: string[];
+      teacherFeedback: string;
+      reviewedBy: string;
+    }
+  ): Promise<DemoReportRecord | null> {
+    const reviewedAt = new Date().toISOString();
+    let updatedReport: DemoReportRecord | null = null;
+
+    if (await connectDatabase()) {
+      if (!mongoose.isValidObjectId(reportId)) return null;
+      const doc: any = await DemoReportModel.findByIdAndUpdate(
+        reportId,
+        {
+          $set: {
+            strengths: payload.strengths,
+            weaknesses: payload.weaknesses,
+            attributedSkills: payload.attributedSkills,
+            teacherFeedback: payload.teacherFeedback,
+            reviewedBy: payload.reviewedBy,
+            reviewedAt,
+            status: 'reviewed',
+          },
+        },
+        { new: true }
+      ).lean();
+      if (!doc) return null;
+      updatedReport = mapDemoReportDoc(doc);
+
+      if (updatedReport.userId && mongoose.isValidObjectId(updatedReport.userId)) {
+        await UserModel.findByIdAndUpdate(updatedReport.userId, {
+          $addToSet: { assignedSkills: { $each: payload.attributedSkills } },
+          $set: {
+            teacherStrengths: payload.strengths,
+            teacherWeaknesses: payload.weaknesses,
+            teacherFeedbackSummary: payload.teacherFeedback,
+          },
+        });
+      }
+      await RosterStudentModel.updateMany(
+        { name: updatedReport.studentName },
+        {
+          $addToSet: { assignedSkills: { $each: payload.attributedSkills } },
+          $set: { skillsTotal: Math.max(9, payload.attributedSkills.length + 3) },
+        }
+      );
+      return updatedReport;
+    }
+
+    const found = memoryDemoReports.find((r) => r.id === reportId);
+    if (!found) return null;
+    found.strengths = payload.strengths;
+    found.weaknesses = payload.weaknesses;
+    found.attributedSkills = payload.attributedSkills;
+    found.teacherFeedback = payload.teacherFeedback;
+    found.reviewedBy = payload.reviewedBy;
+    found.reviewedAt = reviewedAt;
+    found.status = 'reviewed';
+
+    if (found.userId && memoryUsers.has(found.userId)) {
+      const stuUser = memoryUsers.get(found.userId)!;
+      stuUser.assignedSkills = Array.from(
+        new Set([...(stuUser.assignedSkills || []), ...payload.attributedSkills])
+      );
+      stuUser.teacherStrengths = payload.strengths;
+      stuUser.teacherWeaknesses = payload.weaknesses;
+      stuUser.teacherFeedbackSummary = payload.teacherFeedback;
+      memoryUsers.set(found.userId, stuUser);
+    }
+
+    for (const st of memoryRoster) {
+      if (st.name.toLowerCase() === found.studentName.toLowerCase()) {
+        st.assignedSkills = Array.from(new Set([...st.assignedSkills, ...payload.attributedSkills]));
+        st.skillsTotal = Math.max(st.skillsTotal, st.assignedSkills.length);
+      }
+    }
+
     return found;
   },
 };

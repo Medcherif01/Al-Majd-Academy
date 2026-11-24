@@ -5,10 +5,12 @@ import {
   BookOpen,
   Briefcase,
   CheckCircle2,
+  Clock,
   Compass,
   Globe,
   GraduationCap,
   Layers,
+  Lock,
 } from 'lucide-react';
 import { AiExamStudio } from './components/AiExamStudio';
 import { AuthModal } from './components/AuthModal';
@@ -31,6 +33,7 @@ import type {
   PlacementResult,
   PrepHubTab,
   ProgressState,
+  StudentTrackLock,
   TrainerProfile,
   UiLanguage,
   UserProfile,
@@ -70,8 +73,60 @@ export default function App() {
     quizScores: {},
   });
 
+  // Strict Grade/Curriculum Lock + 30-Minute Free Trial Timer
+  const [trackLock, setTrackLock] = useState<StudentTrackLock | null>(null);
+  const [trialStartMs, setTrialStartMs] = useState<number | null>(null);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+
   const t = TRANSLATIONS[lang];
   const isRtl = lang === 'ar';
+
+  const hasPaidAccess = Boolean(
+    user?.hasAllAccessPass ||
+      user?.hasPaidAccess ||
+      (user?.enrolledCourses && user.enrolledCourses.length > 0) ||
+      bookings.some((b) => b.paid)
+  );
+
+  const trialDurationSec = user?.trialDurationSeconds || 1800;
+  const trialSecondsRemaining = hasPaidAccess
+    ? trialDurationSec
+    : user?.trialExpired
+      ? 0
+      : trialStartMs
+        ? Math.max(0, trialDurationSec - Math.floor((nowMs - trialStartMs) / 1000))
+        : trialDurationSec;
+  const trialExpired = !hasPaidAccess && trialSecondsRemaining <= 0;
+
+  useEffect(() => {
+    if (!trialStartMs || hasPaidAccess) return;
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [trialStartMs, hasPaidAccess]);
+
+  const formatTrialClock = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
+  const syncUserTrackAndTrial = useCallback((u: UserProfile) => {
+    if (u.lockedTrackKey && u.lockedCurriculum && u.lockedGrade) {
+      const tk = u.lockedTrackKey as Exclude<CurriculumKey, 'all'>;
+      setTrackLock({
+        gradeLevel: u.lockedGrade,
+        curriculum: u.lockedCurriculum,
+        trackKey: tk,
+      });
+      setSelectedTrack(tk);
+    }
+    if (u.trialStartedAt) {
+      const parsed = Date.parse(u.trialStartedAt);
+      if (Number.isFinite(parsed)) {
+        setTrialStartMs(parsed);
+      }
+    }
+  }, []);
 
   const fetchPastPapers = useCallback(async (activeToken: string | null) => {
     try {
@@ -136,6 +191,7 @@ export default function App() {
   const handleAuthSuccess = async (newToken: string, loggedInUser: UserProfile) => {
     setToken(newToken);
     setUser(loggedInUser);
+    syncUserTrackAndTrial(loggedInUser);
     await Promise.all([
       fetchPastPapers(newToken),
       fetchPaidCourses(newToken),
@@ -146,6 +202,9 @@ export default function App() {
   const handleSignOut = () => {
     setToken(null);
     setUser(null);
+    setTrackLock(null);
+    setTrialStartMs(null);
+    setSelectedTrack('all');
     setBookings([]);
     setSavedExams([]);
     setLatestPlacement(null);
@@ -190,7 +249,7 @@ export default function App() {
 
   const openSpecificCourse = (courseId: string) => {
     setWorkspaceMode('student');
-    setSelectedTrack('all');
+    setSelectedTrack(trackLock && !hasPaidAccess ? trackLock.trackKey : 'all');
     setCourseSubMode('courses');
     setTargetCourseId(courseId);
     setHighlightPaidCourseId(null);
@@ -200,7 +259,7 @@ export default function App() {
 
   const openPaidCourse = (paidCourseId: string) => {
     setWorkspaceMode('student');
-    setSelectedTrack('all');
+    setSelectedTrack(trackLock && !hasPaidAccess ? trackLock.trackKey : 'all');
     setCourseSubMode('courses');
     setHighlightPaidCourseId(paidCourseId);
     setActiveView('courses');
@@ -278,11 +337,36 @@ export default function App() {
                 </button>
               </div>
 
-              <span className="hidden lg:inline text-xs text-slate-500">
-                {lang === 'ar'
-                  ? 'الرياض · جدة · الخبر · SAT · IB · IGCSE · NAFES · STEP · GAT · IELTS'
-                  : 'Riyad · Djeddah · Al-Khobar · SAT · IB · IGCSE · NAFES · STEP · GAT · IELTS'}
-              </span>
+              {trackLock && !hasPaidAccess && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#EEF5F9] border border-[#BFD8E6] text-[11px] font-semibold text-[#0F2537]">
+                  <Lock className="w-3 h-3 text-[#0B6E8C]" />
+                  <span>
+                    {trackLock.gradeLevel.toUpperCase()} · {trackLock.curriculum}
+                  </span>
+                </span>
+              )}
+
+              {hasPaidAccess ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-[11px] font-semibold text-emerald-800">
+                  <CheckCircle2 className="w-3 h-3" />
+                  <span>Accès Complet Activé</span>
+                </span>
+              ) : (
+                <span
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-mono font-semibold tabular-nums ${
+                    trialExpired
+                      ? 'bg-amber-50 border-amber-300 text-amber-900'
+                      : 'bg-slate-50 border-slate-200 text-[#0F2537]'
+                  }`}
+                >
+                  <Clock className="w-3 h-3 text-[#0B6E8C]" />
+                  <span>
+                    {trialExpired
+                      ? 'Essai 30m expiré'
+                      : `Essai Démo : ${formatTrialClock(trialSecondsRemaining)}`}
+                  </span>
+                </span>
+              )}
             </div>
 
             <div className="inline-flex items-center gap-1 p-0.5 bg-[#EAF1F5] border border-[#D8E3EC] rounded-xl">
@@ -490,9 +574,23 @@ export default function App() {
                   <PlacementTestView
                     lang={lang}
                     token={token}
+                    user={user}
                     grades={grades}
                     paidCourses={paidCourses}
                     latestResult={latestPlacement}
+                    trackLock={trackLock}
+                    hasPaidAccess={hasPaidAccess}
+                    onTrackLocked={(lock) => {
+                      setTrackLock(lock);
+                      setSelectedTrack(lock.trackKey);
+                      if (!trialStartMs) {
+                        setTrialStartMs(Date.now());
+                      }
+                    }}
+                    onUserUpdated={(updated) => {
+                      setUser(updated);
+                      syncUserTrackAndTrial(updated);
+                    }}
                     onResultReady={(res) => setLatestPlacement(res)}
                     onGoToCourse={openSpecificCourse}
                     onGoToPaidCourse={openPaidCourse}
@@ -579,8 +677,15 @@ export default function App() {
                     paidCourses={paidCourses}
                     user={user}
                     token={token}
+                    trackLock={trackLock}
+                    trialSecondsRemaining={trialSecondsRemaining}
+                    trialExpired={trialExpired}
+                    hasPaidAccess={hasPaidAccess}
                     onRequireAuth={() => setAuthModalOpen(true)}
-                    onUserUpdated={(updated) => setUser(updated)}
+                    onUserUpdated={(updated) => {
+                      setUser(updated);
+                      syncUserTrackAndTrial(updated);
+                    }}
                     onRefreshPaidCourses={() => fetchPaidCourses(token)}
                     onMarkLessonComplete={handleMarkLessonComplete}
                     onNavigateToTutors={(trainerName) => {
@@ -606,6 +711,16 @@ export default function App() {
                     token={token}
                     initialExam={reopenExam}
                     initialCurriculum={aiInitialCurriculum}
+                    trackLock={trackLock}
+                    hasPaidAccess={hasPaidAccess}
+                    trialExpired={trialExpired}
+                    onUpgradePrompt={() => {
+                      setCourseSubMode('courses');
+                      setActiveView('courses');
+                      setTimeout(() => {
+                        document.getElementById('paid-courses-section')?.scrollIntoView({ behavior: 'smooth' });
+                      }, 120);
+                    }}
                     onExamSaved={(exam) => {
                       setSavedExams((prev) => [exam, ...prev]);
                     }}
@@ -628,7 +743,10 @@ export default function App() {
                     user={user}
                     token={token}
                     onRequireAuth={() => setAuthModalOpen(true)}
-                    onUserUpdated={(updated) => setUser(updated)}
+                    onUserUpdated={(updated) => {
+                      setUser(updated);
+                      syncUserTrackAndTrial(updated);
+                    }}
                     onRefreshPapers={() => fetchPastPapers(token)}
                   />
                 </motion.div>
@@ -648,8 +766,15 @@ export default function App() {
                     preselectedTrainerName={preselectedTrainer}
                     user={user}
                     token={token}
+                    latestPlacement={latestPlacement}
+                    trackLock={trackLock}
                     onRequireAuth={() => setAuthModalOpen(true)}
                     onBookingCreated={(booking) => setBookings((prev) => [booking, ...prev])}
+                    onBookingUpdated={(updatedBooking) =>
+                      setBookings((prev) =>
+                        prev.map((b) => (b.id === updatedBooking.id ? updatedBooking : b))
+                      )
+                    }
                   />
                 </motion.div>
               )}
@@ -666,6 +791,7 @@ export default function App() {
                     lang={lang}
                     user={user}
                     token={token}
+                    trackLock={trackLock}
                     progress={progress}
                     papers={papers}
                     paidCourses={paidCourses}
@@ -674,6 +800,11 @@ export default function App() {
                     savedExams={savedExams}
                     onOpenAuth={() => setAuthModalOpen(true)}
                     onSignOut={handleSignOut}
+                    onBookingUpdated={(updatedBooking) =>
+                      setBookings((prev) =>
+                        prev.map((b) => (b.id === updatedBooking.id ? updatedBooking : b))
+                      )
+                    }
                     onReopenAiExam={(ex) => {
                       setReopenExam(ex);
                       setActiveView('ai-exams');

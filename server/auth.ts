@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import type { Request, Response, NextFunction } from 'express';
-import { db, type UserRecord } from './db.ts';
+import { computeUserEntitlements, db, type UserRecord } from './db.ts';
 
 const EPHEMERAL_SECRET = crypto.randomBytes(32).toString('hex');
 
@@ -106,12 +106,25 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
 }
 
 export function sanitizeUser(user: UserRecord) {
+  const entitlements = computeUserEntitlements(user);
   return {
     id: user.id,
     email: user.email,
     name: user.name,
     role: user.role,
     preferredTrack: user.preferredTrack,
+    lockedGrade: user.lockedGrade ?? null,
+    lockedCurriculum: user.lockedCurriculum ?? null,
+    lockedTrackKey: user.lockedTrackKey ?? null,
+    trialStartedAt: user.trialStartedAt ?? null,
+    trialDurationSeconds: user.trialDurationSeconds || 1800,
+    trialSecondsRemaining: entitlements.trialSecondsRemaining,
+    trialExpired: entitlements.trialExpired,
+    hasPaidAccess: entitlements.hasPaidAccess,
+    assignedSkills: user.assignedSkills || [],
+    teacherStrengths: user.teacherStrengths || [],
+    teacherWeaknesses: user.teacherWeaknesses || [],
+    teacherFeedbackSummary: user.teacherFeedbackSummary || '',
     unlockedPapers: user.unlockedPapers,
     enrolledCourses: user.enrolledCourses || [],
     hasAllAccessPass: user.hasAllAccessPass,

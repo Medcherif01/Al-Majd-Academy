@@ -4,10 +4,12 @@ export async function apiRequest<T>(
     method?: string;
     body?: unknown;
     token?: string | null;
+    headers?: Record<string, string>;
   } = {}
 ): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...(options.headers || {}),
   };
   if (options.token) {
     headers.Authorization = `Bearer ${options.token}`;

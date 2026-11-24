@@ -2,10 +2,12 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Award,
   BookOpenCheck,
+  Calendar,
   Check,
   CheckCircle2,
   ClipboardCheck,
   Copy,
+  ExternalLink,
   FileSpreadsheet,
   GraduationCap,
   Layers,
@@ -18,10 +20,13 @@ import {
   TrendingUp,
   UserPlus,
   Users,
+  Video,
 } from 'lucide-react';
 import { apiRequest } from '../utils/api';
 import { ExamPrepHubs } from './ExamPrepHubs';
 import type {
+  BookingItem,
+  DemoReport,
   PrepHubTab,
   RosterStudent,
   TeacherSubTab,
@@ -70,6 +75,18 @@ export function TeacherPortal({ lang, onLaunchAiExam }: TeacherPortalProps) {
   const [missions, setMissions] = useState<WeeklyMission[]>([]);
   const [writings, setWritings] = useState<WritingSubmission[]>([]);
   const [pendingWritingCount, setPendingWritingCount] = useState(0);
+  const [demoReports, setDemoReports] = useState<DemoReport[]>([]);
+  const [pendingDemoReportsCount, setPendingDemoReportsCount] = useState(0);
+  const [bookings, setBookings] = useState<BookingItem[]>([]);
+
+  // Demo Report Skill Attribution Editor
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const [reportStrengthsText, setReportStrengthsText] = useState('');
+  const [reportWeaknessesText, setReportWeaknessesText] = useState('');
+  const [reportSkills, setReportSkills] = useState<string[]>([]);
+  const [customReportSkill, setCustomReportSkill] = useState('');
+  const [reportFeedback, setReportFeedback] = useState('');
+  const [savingReport, setSavingReport] = useState(false);
 
   // Add Students Form (matches reference screenshot)
   const [namesText, setNamesText] = useState('');
@@ -109,6 +126,14 @@ export function TeacherPortal({ lang, onLaunchAiExam }: TeacherPortalProps) {
     setTimeout(() => setToast(''), 3500);
   };
 
+  const loadReportIntoEditor = (rep: DemoReport) => {
+    setSelectedReportId(rep.id);
+    setReportStrengthsText(rep.strengths.join('\n'));
+    setReportWeaknessesText(rep.weaknesses.join('\n'));
+    setReportSkills(rep.attributedSkills || []);
+    setReportFeedback(rep.teacherFeedback || '');
+  };
+
   const fetchOverview = useCallback(async (tid: 'marwan' | 'mohamed') => {
     setLoading(true);
     try {
@@ -116,12 +141,28 @@ export function TeacherPortal({ lang, onLaunchAiExam }: TeacherPortalProps) {
         students: RosterStudent[];
         missions: WeeklyMission[];
         writings: WritingSubmission[];
+        demoReports?: DemoReport[];
+        bookings?: BookingItem[];
         pendingWritingCount: number;
+        pendingDemoReportsCount?: number;
       }>(`/api/teacher/overview?teacherId=${tid}`);
       setStudents(res.students);
       setMissions(res.missions);
       setWritings(res.writings);
       setPendingWritingCount(res.pendingWritingCount);
+
+      const reports = res.demoReports || [];
+      setDemoReports(reports);
+      setPendingDemoReportsCount(res.pendingDemoReportsCount ?? reports.filter((r) => r.status === 'new').length);
+      setBookings(res.bookings || []);
+
+      if (reports.length > 0) {
+        const firstNew = reports.find((r) => r.status === 'new') || reports[0];
+        loadReportIntoEditor(firstNew);
+      } else {
+        setSelectedReportId(null);
+      }
+
       if (res.writings.length > 0) {
         const firstPending = res.writings.find((w) => w.status === 'pending') || res.writings[0];
         setSelectedWritingId(firstPending.id);
@@ -294,9 +335,52 @@ export function TeacherPortal({ lang, onLaunchAiExam }: TeacherPortalProps) {
       : 0;
 
   const selectedWriting = writings.find((w) => w.id === selectedWritingId) || writings[0] || null;
+  const selectedReport = demoReports.find((r) => r.id === selectedReportId) || demoReports[0] || null;
 
-  const row1Tabs: { id: TeacherSubTab; label: string }[] = [
+  const handleAttributeReport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedReport || reportSkills.length === 0) return;
+    setSavingReport(true);
+    try {
+      const strengths = reportStrengthsText
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const weaknesses = reportWeaknessesText
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      const res = await apiRequest<{ report: DemoReport }>(
+        `/api/teacher/demo-reports/${encodeURIComponent(selectedReport.id)}/attribute`,
+        {
+          method: 'POST',
+          body: {
+            strengths,
+            weaknesses,
+            attributedSkills: reportSkills,
+            teacherFeedback: reportFeedback,
+            reviewedBy: teacherId === 'marwan' ? 'Mr. Marwan Mhamdi' : 'M. Mohamed Cherif',
+          },
+        }
+      );
+      setDemoReports((prev) => {
+        const updated = prev.map((r) => (r.id === res.report.id ? res.report : r));
+        setPendingDemoReportsCount(updated.filter((r) => r.status === 'new').length);
+        return updated;
+      });
+      showToast(`Compétences & bilan attribués à ${res.report.studentName}.`);
+    } catch (err: any) {
+      showToast(err.message || 'Erreur lors de la validation du bilan.');
+    } finally {
+      setSavingReport(false);
+    }
+  };
+
+  const row1Tabs: { id: TeacherSubTab; label: string; badge?: number }[] = [
     { id: 'dashboard', label: 'Dashboard' },
+    { id: 'demo-reports', label: 'Demo test reports', badge: pendingDemoReportsCount },
+    { id: 'tutoring-bookings', label: 'Private Meet bookings', badge: bookings.length },
     { id: 'weekly-mission', label: 'Weekly mission' },
     { id: 'students-codes', label: 'Students & codes' },
     { id: 'assign-skills', label: 'Assign skills' },
@@ -376,13 +460,22 @@ export function TeacherPortal({ lang, onLaunchAiExam }: TeacherPortalProps) {
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all whitespace-nowrap shrink-0 inline-flex items-center gap-2 cursor-pointer ${
                   active
                     ? 'bg-white text-[#0F2537] shadow-xs border border-slate-200/80'
                     : 'text-slate-600 hover:text-[#0F2537] hover:bg-white/60'
                 }`}
               >
-                {tab.label}
+                <span>{tab.label}</span>
+                {typeof tab.badge === 'number' && tab.badge > 0 && (
+                  <span
+                    className={`px-1.5 py-0.5 rounded-md font-mono text-[10px] font-bold leading-none tabular-nums ${
+                      tab.id === 'demo-reports' ? 'bg-[#D93829] text-white' : 'bg-[#0B6E8C] text-white'
+                    }`}
+                  >
+                    {tab.badge}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -732,18 +825,35 @@ export function TeacherPortal({ lang, onLaunchAiExam }: TeacherPortalProps) {
 
             <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
               <div className="text-xs text-slate-500 mb-1 flex items-center gap-1.5">
-                <Target className="w-3.5 h-3.5 text-[#0B6E8C]" />
-                <span>Active Weekly Missions</span>
+                <Target className="w-3.5 h-3.5 text-[#D93829]" />
+                <span>Demo Test Reports</span>
               </div>
               <div className="font-mono text-2xl font-bold text-[#0F2537] tabular-nums">
-                {missions.length}
+                {demoReports.length}
               </div>
               <button
                 type="button"
-                onClick={() => setActiveTab('weekly-mission')}
+                onClick={() => setActiveTab('demo-reports')}
                 className="text-[11px] font-semibold text-[#0B6E8C] hover:underline mt-1 cursor-pointer"
               >
-                Manage missions →
+                {pendingDemoReportsCount} pending skill attribution →
+              </button>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
+              <div className="text-xs text-slate-500 mb-1 flex items-center gap-1.5">
+                <Video className="w-3.5 h-3.5 text-[#0B6E8C]" />
+                <span>Private Meet Sessions</span>
+              </div>
+              <div className="font-mono text-2xl font-bold text-[#0F2537] tabular-nums">
+                {bookings.length}
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab('tutoring-bookings')}
+                className="text-[11px] font-semibold text-[#0B6E8C] hover:underline mt-1 cursor-pointer"
+              >
+                View dates, themes &amp; Meet links →
               </button>
             </div>
           </div>
@@ -1201,6 +1311,307 @@ export function TeacherPortal({ lang, onLaunchAiExam }: TeacherPortalProps) {
               </form>
             )}
           </div>
+        </div>
+      )}
+
+      {/* TAB: DEMO TEST REPORTS & TEACHER SKILL ATTRIBUTION */}
+      {activeTab === 'demo-reports' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-5 bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
+            <h2 className="font-display text-lg font-bold text-[#0F2537] flex items-center justify-between">
+              <span>Student Demo Reports ({demoReports.length})</span>
+              <span className="text-xs font-mono text-[#D93829]">{pendingDemoReportsCount} new</span>
+            </h2>
+
+            {demoReports.length === 0 ? (
+              <p className="text-xs text-slate-600 py-4">
+                No placement demo tests received yet for this teacher.
+              </p>
+            ) : (
+              <div className="space-y-2.5">
+                {demoReports.map((rep) => {
+                  const active = selectedReport?.id === rep.id;
+                  return (
+                    <button
+                      key={rep.id}
+                      type="button"
+                      onClick={() => loadReportIntoEditor(rep)}
+                      className={`w-full text-start p-4 rounded-xl border transition-colors cursor-pointer ${
+                        active
+                          ? 'bg-[#EEF5F9] border-[#0B6E8C]'
+                          : 'bg-[#F8FAFC] border-slate-200 hover:border-slate-400'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="font-semibold text-[#0F2537]">{rep.studentName}</span>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                            rep.status === 'reviewed'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-rose-100 text-rose-800'
+                          }`}
+                        >
+                          {rep.status === 'reviewed' ? 'Skills Attributed' : `New · ${rep.overallScore}%`}
+                        </span>
+                      </div>
+                      <div className="text-xs text-[#0B6E8C] font-medium">
+                        {rep.curriculum} · {rep.gradeLevel.toUpperCase()} · {rep.language}
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-1 line-clamp-1">
+                        Weaknesses: {rep.weaknesses.join(', ') || 'None'}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="lg:col-span-7 bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
+            {!selectedReport ? (
+              <p className="text-sm text-slate-600">Select a student demo report to assign skills.</p>
+            ) : (
+              <form onSubmit={handleAttributeReport} className="space-y-5">
+                <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-4">
+                  <div>
+                    <div className="text-xs font-semibold text-[#0B6E8C] mb-1">
+                      {selectedReport.curriculum} · {selectedReport.gradeLevel.toUpperCase()} · {selectedReport.studentEmail}
+                    </div>
+                    <h3 className="font-display text-xl font-bold text-[#0F2537]">
+                      {selectedReport.studentName} — {selectedReport.levelLabel}
+                    </h3>
+                  </div>
+                  <div className="font-mono text-2xl font-bold text-[#0B6E8C] tabular-nums">
+                    {selectedReport.overallScore}%
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-600 bg-[#F8FAFC] p-3.5 rounded-xl border border-slate-200 leading-relaxed">
+                  {selectedReport.summaryText}
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-emerald-900 mb-1.5">
+                      Points forts (Strengths · one per line)
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={reportStrengthsText}
+                      onChange={(e) => setReportStrengthsText(e.target.value)}
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0B6E8C]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-amber-900 mb-1.5">
+                      Points faibles (Weaknesses · one per line)
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={reportWeaknessesText}
+                      onChange={(e) => setReportWeaknessesText(e.target.value)}
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0B6E8C]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#0F2537] mb-2">
+                    Attribute Needed Skills to {selectedReport.studentName}
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+                    {CURATED_SKILLS_BY_TEACHER[teacherId].map((sk) => {
+                      const checked = reportSkills.includes(sk);
+                      return (
+                        <button
+                          key={sk}
+                          type="button"
+                          onClick={() =>
+                            setReportSkills((prev) =>
+                              prev.includes(sk) ? prev.filter((x) => x !== sk) : [...prev, sk]
+                            )
+                          }
+                          className={`px-3 py-2 rounded-xl border text-start text-xs font-semibold flex items-center justify-between gap-2 cursor-pointer ${
+                            checked
+                              ? 'bg-[#EEF5F9] border-[#0B6E8C] text-[#0F2537]'
+                              : 'bg-white border-slate-200 text-slate-700'
+                          }`}
+                        >
+                          <span>{sk}</span>
+                          {checked && <Check className="w-3.5 h-3.5 text-[#0B6E8C] shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={customReportSkill}
+                      onChange={(e) => setCustomReportSkill(e.target.value)}
+                      placeholder="Add custom required skill..."
+                      className="flex-1 px-3 py-2 text-xs border border-slate-300 rounded-xl"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const val = customReportSkill.trim();
+                        if (val && !reportSkills.includes(val)) {
+                          setReportSkills((prev) => [...prev, val]);
+                        }
+                        setCustomReportSkill('');
+                      }}
+                      className="px-3.5 py-2 border border-slate-300 hover:border-[#0B6E8C] rounded-xl text-xs font-semibold cursor-pointer"
+                    >
+                      + Add Skill
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Diagnostic Guidance Sent to Student Account
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={reportFeedback}
+                    onChange={(e) => setReportFeedback(e.target.value)}
+                    placeholder="Explain what the student mastered, what gaps to prioritize, and recommended coaching focus..."
+                    className="w-full px-3.5 py-2.5 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0B6E8C]"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={savingReport || reportSkills.length === 0}
+                  className="px-5 py-2.5 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                >
+                  <ClipboardCheck className="w-4 h-4" />
+                  <span>
+                    {savingReport
+                      ? 'Saving...'
+                      : `Attribute ${reportSkills.length} Skill(s) & Feedback to Student`}
+                  </span>
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB: PRIVATE MEET BOOKING REPORTS */}
+      {activeTab === 'tutoring-bookings' && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-7 shadow-xs space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
+            <div>
+              <h2 className="font-display text-xl font-bold text-[#0F2537]">
+                Paid Private Tutoring Reports &amp; Google Meet Links ({bookings.length})
+              </h2>
+              <p className="text-xs text-slate-600 mt-0.5">
+                Every paid booking transmits the student’s chosen date, time, training duration, attached weaknesses, requested lessons, and instant Google Meet link.
+              </p>
+            </div>
+          </div>
+
+          {bookings.length === 0 ? (
+            <p className="text-sm text-slate-600 py-6">
+              No private tutoring bookings scheduled yet for this trainer.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {bookings.map((b) => (
+                <div
+                  key={b.id}
+                  className="p-5 rounded-2xl border border-slate-200 bg-[#F8FAFC] space-y-3"
+                >
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-semibold text-[#0B6E8C]">
+                        {b.curriculum} · {b.subject} · {b.language}
+                      </div>
+                      <h3 className="font-display text-lg font-bold text-[#0F2537]">
+                        {b.studentName}{' '}
+                        <span className="text-xs font-normal text-slate-500">({b.contactEmail})</span>
+                      </h3>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-xs font-mono tabular-nums">
+                      <span className="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-900 font-semibold">
+                        Paid · {b.priceSar} SAR ({b.paymentReference})
+                      </span>
+                      <span className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-[#0F2537] font-semibold">
+                        {b.dateSlot} · {b.timeSlot} · {b.durationLabel}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-200/80 text-xs">
+                    <div>
+                      <div className="font-semibold text-amber-900 mb-1">
+                        Points faibles signalés par l’élève :
+                      </div>
+                      {b.attachedWeaknesses && b.attachedWeaknesses.length > 0 ? (
+                        <ul className="space-y-1 text-slate-700">
+                          {b.attachedWeaknesses.map((w, i) => (
+                            <li key={i}>• {w}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <span className="text-slate-500">Aucun point faible spécifique joint.</span>
+                      )}
+                    </div>
+
+                    <div>
+                      <div className="font-semibold text-[#0F2537] mb-1">
+                        Thèmes &amp; Leçons demandés :
+                      </div>
+                      {b.themesToCover && b.themesToCover.length > 0 ? (
+                        <ul className="space-y-1 text-slate-700">
+                          {b.themesToCover.map((th, i) => (
+                            <li key={i}>• {th}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <span className="text-slate-500">{b.notes || 'Programme général du cursus.'}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-3">
+                    {b.meetLink ? (
+                      <div className="flex flex-wrap items-center gap-3">
+                        <a
+                          href={b.meetLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-4 py-2 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2"
+                        >
+                          <Video className="w-3.5 h-3.5" />
+                          <span>Rejoindre Google Meet</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                        <span className="font-mono text-xs text-slate-600 select-all">{b.meetLink}</span>
+                        {b.calendarEventLink && (
+                          <a
+                            href={b.calendarEventLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-2 bg-white border border-slate-300 text-slate-700 text-xs font-semibold rounded-xl inline-flex items-center gap-1.5"
+                          >
+                            <Calendar className="w-3.5 h-3.5" />
+                            <span>Agenda</span>
+                          </a>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-amber-800">
+                        Paiement confirmé — en attente de génération Google Meet depuis le compte élève.
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

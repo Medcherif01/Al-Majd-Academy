@@ -7,6 +7,7 @@ import {
   CreditCard,
   Download,
   FileText,
+  Lock,
   Scale,
   Sparkles,
   Unlock,
@@ -23,6 +24,7 @@ import type {
   PaidCourseItem,
   PrepHubTab,
   ProgressState,
+  StudentTrackLock,
   UiLanguage,
   UserProfile,
 } from '../types/academy';
@@ -39,6 +41,10 @@ interface CourseWorkspaceProps {
   paidCourses: PaidCourseItem[];
   user: UserProfile | null;
   token: string | null;
+  trackLock: StudentTrackLock | null;
+  trialSecondsRemaining: number;
+  trialExpired: boolean;
+  hasPaidAccess: boolean;
   onRequireAuth: () => void;
   onUserUpdated: (user: UserProfile) => void;
   onRefreshPaidCourses: () => Promise<void>;
@@ -100,6 +106,10 @@ export function CourseWorkspace({
   paidCourses,
   user,
   token,
+  trackLock,
+  trialSecondsRemaining,
+  trialExpired,
+  hasPaidAccess,
   onRequireAuth,
   onUserUpdated,
   onRefreshPaidCourses,
@@ -120,6 +130,9 @@ export function CourseWorkspace({
   const [paymentMethod, setPaymentMethod] = useState<string>('Mada · Saudi Payments');
   const [enrolling, setEnrolling] = useState(false);
   const [enrollMessage, setEnrollMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const isTrackLocked = Boolean(trackLock && !hasPaidAccess);
+  const effectiveTrack: CurriculumKey = isTrackLocked && trackLock ? trackLock.trackKey : selectedTrack;
 
   useEffect(() => {
     setSubMode(initialSubMode);
@@ -160,19 +173,33 @@ export function CourseWorkspace({
   ];
 
   const filteredCourses =
-    selectedTrack === 'all'
+    effectiveTrack === 'all'
       ? COURSE_MODULES
-      : COURSE_MODULES.filter((c) => c.curriculumKey === selectedTrack);
+      : COURSE_MODULES.filter((c) => c.curriculumKey === effectiveTrack);
 
   const activeCourse =
     filteredCourses.find((c) => c.id === activeCourseId) || filteredCourses[0] || COURSE_MODULES[0];
   const activeLesson = activeCourse.lessons[activeLessonIndex] || activeCourse.lessons[0];
   const isLessonDone = progress.completedLessonIds.includes(activeLesson.id);
 
+  const isCoursePaidUnlocked =
+    Boolean(user?.hasAllAccessPass) ||
+    paidCourses.some((pc) => pc.isEnrolled && pc.curriculumKey === activeCourse.curriculumKey) ||
+    hasPaidAccess;
+
+  const isCurrentChapterLocked = activeLessonIndex > 0 && !isCoursePaidUnlocked;
+  const isTrialBlockingDemo = trialExpired && !isCoursePaidUnlocked;
+
+  const formatCountdown = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
   const visiblePaidCourses =
-    selectedTrack === 'all'
+    effectiveTrack === 'all'
       ? paidCourses
-      : paidCourses.filter((c) => c.curriculumKey === selectedTrack);
+      : paidCourses.filter((c) => c.curriculumKey === effectiveTrack);
 
   const handleSelectCourse = (courseId: string) => {
     setActiveCourseId(courseId);
@@ -188,7 +215,7 @@ export function CourseWorkspace({
   };
 
   const handleCheckAnswer = async () => {
-    if (selectedOption === null) return;
+    if (selectedOption === null || isTrialBlockingDemo) return;
     setCheckpointSubmitted(true);
     const isCorrect = selectedOption === activeLesson.checkpoint.correctIndex;
     await onMarkLessonComplete(activeLesson.id, isCorrect ? 100 : 50);
@@ -302,28 +329,90 @@ export function CourseWorkspace({
               </div>
             </div>
 
+        {/* Track Lock & 30-Minute Demo Trial Banner */}
+        {!isCoursePaidUnlocked && (
+          <div
+            className={`mb-6 p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+              trialExpired
+                ? 'bg-amber-50 border-amber-300 text-amber-950'
+                : 'bg-[#EEF5F9] border-[#BFD8E6] text-[#0F2537]'
+            }`}
+          >
+            <div className="flex items-start gap-3 text-xs sm:text-sm">
+              <Lock className="w-4 h-4 text-[#0B6E8C] shrink-0 mt-0.5" />
+              <div>
+                {isTrackLocked && trackLock ? (
+                  <>
+                    <strong>
+                      {lang === 'ar'
+                        ? 'المسار المثبت :'
+                        : lang === 'en'
+                          ? 'Locked Track:'
+                          : 'Parcours verrouillé :'}
+                    </strong>{' '}
+                    <span className="font-semibold text-[#0B6E8C]">
+                      {trackLock.gradeLevel.toUpperCase()} · {trackLock.curriculum}
+                    </span>{' '}
+                    —{' '}
+                  </>
+                ) : null}
+                <span>
+                  {trialExpired
+                    ? lang === 'ar'
+                      ? 'انتهت فترة التجربة المجانية (30 دقيقة). سجّل في الدورة المدفوعة أو احجز مدرباً لفتح كل الفصول.'
+                      : lang === 'en'
+                        ? 'Your 30-minute free demo trial has expired. Enroll in a paid course or private coaching to unlock full access.'
+                        : 'Votre essai gratuit de 30 minutes est terminé. Inscrivez-vous à un cours payant ou réservez un formateur.'
+                    : lang === 'ar'
+                      ? 'الفصل 01 متاح كنسخة تجريبية مجانية (30 دقيقة). الفصول المتقدمة تتطلب التسجيل.'
+                      : lang === 'en'
+                        ? 'Only Chapter 01 (Demo) is unlocked during your 30-minute free trial; Chapters 02+ unlock upon paid enrollment.'
+                        : 'Seul le Chapitre 01 (Démo) est accessible pendant l’essai gratuit de 30 min ; les chapitres suivants sont réservés aux inscrits.'}
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 shrink-0">
+              <span className="font-mono text-xs font-bold px-3 py-1.5 rounded-lg bg-white border border-slate-200 tabular-nums">
+                {trialExpired ? '00:00' : formatCountdown(trialSecondsRemaining)}
+              </span>
+              <a
+                href="#paid-courses-section"
+                className="px-3.5 py-1.5 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-lg whitespace-nowrap"
+              >
+                {lang === 'ar' ? 'فتح الكل' : lang === 'en' ? 'Upgrade' : 'Débloquer'}
+              </a>
+            </div>
+          </div>
+        )}
+
         {/* Segmented Interactive Curriculum Filter Bar */}
         <div className="overflow-x-auto pb-2 mb-8">
           <div className="inline-flex items-center gap-1 p-1 bg-slate-100 border border-slate-200 rounded-xl">
             {filters.map((f) => {
-              const active = selectedTrack === f.key;
+              const active = effectiveTrack === f.key;
+              const disabled = isTrackLocked && f.key !== effectiveTrack;
               return (
                 <button
                   key={f.key}
                   type="button"
+                  disabled={disabled}
                   onClick={() => {
+                    if (disabled) return;
                     onSelectTrack(f.key);
                     setActiveLessonIndex(0);
                     setSelectedOption(null);
                     setCheckpointSubmitted(false);
                   }}
-                  className={`px-3.5 py-2 text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                    active
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
+                  className={`px-3.5 py-2 text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 ${
+                    disabled
+                      ? 'text-slate-400 opacity-50 cursor-not-allowed'
+                      : active
+                        ? 'bg-white text-slate-900 shadow-xs cursor-pointer'
+                        : 'text-slate-600 hover:text-slate-900 cursor-pointer'
                   }`}
                 >
-                  {f.label}
+                  {disabled && <Lock className="w-3 h-3" />}
+                  <span>{f.label}</span>
                 </button>
               );
             })}
@@ -457,6 +546,7 @@ export function CourseWorkspace({
                 {activeCourse.lessons.map((lesson, idx) => {
                   const isCurrent = idx === activeLessonIndex;
                   const done = progress.completedLessonIds.includes(lesson.id);
+                  const chapterLocked = idx > 0 && !isCoursePaidUnlocked;
                   return (
                     <button
                       key={lesson.id}
@@ -465,11 +555,26 @@ export function CourseWorkspace({
                       className={`w-full text-start p-4 rounded-xl border transition-colors cursor-pointer ${
                         isCurrent
                           ? 'bg-white border-emerald-700 shadow-xs'
-                          : 'bg-white/60 border-slate-200 hover:border-slate-300'
+                          : chapterLocked
+                            ? 'bg-slate-50/70 border-slate-200 text-slate-500 hover:border-slate-300'
+                            : 'bg-white/60 border-slate-200 hover:border-slate-300'
                       }`}
                     >
                       <div className="flex items-center justify-between text-xs text-slate-500 mb-1 tabular-nums">
-                        <span className="font-mono font-semibold text-emerald-700">{lesson.order}</span>
+                        <span className="font-mono font-semibold text-emerald-700 inline-flex items-center gap-1.5">
+                          <span>{lesson.order}</span>
+                          {idx === 0 && !isCoursePaidUnlocked && (
+                            <span className="px-1.5 py-0.5 rounded bg-sky-100 text-[#0B6E8C] font-sans text-[10px] font-bold">
+                              DÉMO
+                            </span>
+                          )}
+                          {chapterLocked && (
+                            <span className="inline-flex items-center gap-1 text-amber-800 font-sans text-[10px] font-semibold">
+                              <Lock className="w-3 h-3" />
+                              Payant
+                            </span>
+                          )}
+                        </span>
                         <span>
                           {lesson.durationMin} min {done ? '· ✓' : ''}
                         </span>
@@ -502,164 +607,224 @@ export function CourseWorkspace({
             </aside>
 
             <div className="lg:col-span-8 p-6 sm:p-8 space-y-8" dir={activeCourse.language === 'العربية' ? 'rtl' : 'ltr'}>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-200">
-                <div>
-                  <div className="text-xs font-mono text-emerald-700 mb-1">
-                    {activeLesson.order} · {activeLesson.durationMin} min
+              {isCurrentChapterLocked ? (
+                <div className="py-10 px-6 rounded-2xl border border-amber-200 bg-amber-50/60 text-center space-y-4">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mx-auto">
+                    <Lock className="w-6 h-6" />
                   </div>
-                  <h4 className="font-display text-2xl font-semibold text-slate-900">
+                  <div className="font-mono text-xs font-semibold text-amber-800">
+                    {activeLesson.order} · {lang === 'ar' ? 'فصل مقفل (للمشتركين)' : lang === 'en' ? 'Locked Paid Chapter' : 'Chapitre Réservé aux Inscrits'}
+                  </div>
+                  <h4 className="font-display text-2xl font-bold text-[#0F2537]">
                     {activeLesson.title}
                   </h4>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => downloadStudySheet(activeCourse, activeLesson)}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer self-start"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  {t.downloadSheet}
-                </button>
-              </div>
-
-              <div className="p-5 rounded-xl bg-amber-50/70 border border-amber-200/80">
-                <div className="text-xs font-semibold text-amber-900 mb-1.5 flex items-center gap-1.5">
-                  <BookOpen className="w-3.5 h-3.5" />
-                  <span>{t.examRulesTitle}</span>
-                </div>
-                <p className="text-sm text-slate-800 leading-relaxed">{activeLesson.officialRuleFocus}</p>
-              </div>
-
-              <div>
-                <h5 className="text-sm font-semibold text-slate-900 mb-3">
-                  {lang === 'ar' ? 'الشرح المفصل والمفاهيم الأساسية' : lang === 'en' ? 'Core Explanations & Concepts' : 'Explications Détaillées du Cours'}
-                </h5>
-                <ul className="space-y-2.5">
-                  {activeLesson.concepts.map((concept, i) => (
-                    <li key={i} className="flex items-start gap-3 text-sm text-slate-700 leading-relaxed">
-                      <span className="font-mono text-xs font-semibold text-emerald-700 mt-0.5 tabular-nums">
-                        0{i + 1}.
-                      </span>
-                      <span>{concept}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="p-5 sm:p-6 rounded-xl bg-slate-50 border border-slate-200">
-                <h5 className="text-sm font-semibold text-slate-900 mb-2">{t.workedExampleTitle}</h5>
-                <p className="text-sm font-medium text-slate-900 mb-4 leading-relaxed">
-                  {activeLesson.workedExample.problem}
-                </p>
-                <div className="space-y-2 pt-3 border-t border-slate-200">
-                  {activeLesson.workedExample.solutionSteps.map((step, idx) => (
-                    <p key={idx} className="text-sm text-slate-700 leading-relaxed">
-                      {step}
-                    </p>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <h5 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-emerald-700" />
-                  <span>{t.resourcesTitle}</span>
-                </h5>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {activeLesson.resourceChecklist.map((resItem, idx) => (
-                    <div
-                      key={idx}
-                      className="p-3.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-800 flex items-center justify-between gap-3"
+                  <p className="text-sm text-slate-600 max-w-lg mx-auto leading-relaxed">
+                    {lang === 'ar'
+                      ? 'يتيح لك الحساب التجريبي دراسة الفصل 01 فقط. اشترك في البرنامج المدفوع أو احجز حصة مع المدرب لفتح هذا الفصل والملفات الكاملة.'
+                      : lang === 'en'
+                        ? 'Your free demo account gives access only to Chapter 01 (30 min trial). Enroll in the paid program below or book private tutoring to unlock all chapters.'
+                        : 'Votre accès démo limite la consultation au Chapitre 01 (essai 30 min). Rejoignez le programme payant ci-dessous ou réservez un formateur pour débloquer la suite du cours.'}
+                  </p>
+                  <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                    <a
+                      href="#paid-courses-section"
+                      className="px-5 py-2.5 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-xl"
                     >
-                      <span>{resItem}</span>
-                      <button
-                        type="button"
-                        onClick={() => downloadStudySheet(activeCourse, activeLesson)}
-                        className="text-emerald-700 hover:text-emerald-950 font-semibold whitespace-nowrap shrink-0 cursor-pointer"
-                      >
-                        {lang === 'ar' ? 'تحميل' : lang === 'en' ? 'Get' : 'Ouvrir'}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="p-5 sm:p-6 rounded-xl border border-slate-200 bg-white">
-                <div className="flex items-center justify-between gap-4 mb-3">
-                  <h5 className="text-sm font-semibold text-slate-900">{t.checkpointTitle}</h5>
-                  {isLessonDone && (
-                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
-                      <CheckCircle2 className="w-4 h-4" />
-                      {t.lessonCompleted}
-                    </span>
-                  )}
-                </div>
-                <p className="text-sm text-slate-800 mb-4 leading-relaxed">{activeLesson.checkpoint.question}</p>
-                <div className="space-y-2 mb-4">
-                  {activeLesson.checkpoint.options.map((opt, idx) => {
-                    const isPicked = selectedOption === idx;
-                    const isCorrectOpt = idx === activeLesson.checkpoint.correctIndex;
-                    let style = 'border-slate-200 bg-white text-slate-800 hover:border-slate-400';
-                    if (checkpointSubmitted) {
-                      if (isCorrectOpt) style = 'border-emerald-700 bg-emerald-50 text-emerald-950';
-                      else if (isPicked) style = 'border-red-400 bg-red-50 text-red-900';
-                    } else if (isPicked) {
-                      style = 'border-slate-900 bg-slate-50 text-slate-900';
-                    }
-                    return (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => {
-                          setSelectedOption(idx);
-                          setCheckpointSubmitted(false);
-                        }}
-                        className={`w-full text-start px-4 py-2.5 rounded-lg border text-sm transition-colors cursor-pointer ${style}`}
-                      >
-                        {opt}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {checkpointSubmitted && (
-                  <div className="mb-4 p-3.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700 leading-relaxed">
-                    <strong>
-                      {selectedOption === activeLesson.checkpoint.correctIndex
-                        ? lang === 'ar'
-                          ? 'إجابة صحيحة — '
-                          : lang === 'en'
-                            ? 'Correct — '
-                            : 'Exact — '
-                        : lang === 'ar'
-                          ? 'تصحيح — '
-                          : lang === 'en'
-                            ? 'Explanation — '
-                            : 'Correction — '}
-                    </strong>
-                    {activeLesson.checkpoint.explanation}
-                  </div>
-                )}
-
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    disabled={selectedOption === null}
-                    onClick={handleCheckAnswer}
-                    className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
-                  >
-                    {lang === 'ar' ? 'تحقق من الإجابة' : lang === 'en' ? 'Verify Answer' : 'Vérifier la réponse'}
-                  </button>
-                  {!isLessonDone && (
+                      {lang === 'ar' ? 'عرض الدورات المدفوعة' : lang === 'en' ? 'View Paid Programs' : 'Voir les cours payants'}
+                    </a>
                     <button
                       type="button"
-                      onClick={() => onMarkLessonComplete(activeLesson.id)}
-                      className="px-4 py-2 border border-slate-300 hover:border-slate-900 text-slate-800 text-xs font-medium rounded-lg transition-colors cursor-pointer"
+                      onClick={() => onNavigateToTutors(activeCourse.leadTrainer)}
+                      className="px-5 py-2.5 bg-white border border-slate-300 hover:border-[#0B6E8C] text-[#0F2537] text-xs font-semibold rounded-xl cursor-pointer"
                     >
-                      {t.markLessonDone}
+                      {lang === 'ar'
+                        ? `حجز حصة مع ${activeCourse.leadTrainer}`
+                        : lang === 'en'
+                          ? `Book ${activeCourse.leadTrainer}`
+                          : `Cours privé avec ${activeCourse.leadTrainer}`}
                     </button>
-                  )}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-200">
+                    <div>
+                      <div className="text-xs font-mono text-emerald-700 mb-1">
+                        {activeLesson.order} · {activeLesson.durationMin} min {!isCoursePaidUnlocked ? '· DÉMO' : ''}
+                      </div>
+                      <h4 className="font-display text-2xl font-semibold text-slate-900">
+                        {activeLesson.title}
+                      </h4>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isTrialBlockingDemo}
+                      onClick={() => downloadStudySheet(activeCourse, activeLesson)}
+                      className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-900 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer self-start"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      {t.downloadSheet}
+                    </button>
+                  </div>
+
+                  {isTrialBlockingDemo && (
+                    <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 text-xs sm:text-sm text-amber-950 flex flex-wrap items-center justify-between gap-3">
+                      <span>
+                        <strong>Essai gratuit de 30 minutes expiré :</strong> les exercices interactifs et fiches sont suspendus jusqu’à votre inscription.
+                      </span>
+                      <a
+                        href="#paid-courses-section"
+                        className="px-3 py-1.5 bg-[#0B6E8C] text-white text-xs font-semibold rounded-lg"
+                      >
+                        S’inscrire
+                      </a>
+                    </div>
+                  )}
+
+                  <div className="p-5 rounded-xl bg-amber-50/70 border border-amber-200/80">
+                    <div className="text-xs font-semibold text-amber-900 mb-1.5 flex items-center gap-1.5">
+                      <BookOpen className="w-3.5 h-3.5" />
+                      <span>{t.examRulesTitle}</span>
+                    </div>
+                    <p className="text-sm text-slate-800 leading-relaxed">{activeLesson.officialRuleFocus}</p>
+                  </div>
+
+                  <div>
+                    <h5 className="text-sm font-semibold text-slate-900 mb-3">
+                      {lang === 'ar' ? 'الشرح المفصل والمفاهيم الأساسية' : lang === 'en' ? 'Core Explanations & Concepts' : 'Explications Détaillées du Cours'}
+                    </h5>
+                    <ul className="space-y-2.5">
+                      {activeLesson.concepts.map((concept, i) => (
+                        <li key={i} className="flex items-start gap-3 text-sm text-slate-700 leading-relaxed">
+                          <span className="font-mono text-xs font-semibold text-emerald-700 mt-0.5 tabular-nums">
+                            0{i + 1}.
+                          </span>
+                          <span>{concept}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="p-5 sm:p-6 rounded-xl bg-slate-50 border border-slate-200">
+                    <h5 className="text-sm font-semibold text-slate-900 mb-2">{t.workedExampleTitle}</h5>
+                    <p className="text-sm font-medium text-slate-900 mb-4 leading-relaxed">
+                      {activeLesson.workedExample.problem}
+                    </p>
+                    <div className="space-y-2 pt-3 border-t border-slate-200">
+                      {activeLesson.workedExample.solutionSteps.map((step, idx) => (
+                        <p key={idx} className="text-sm text-slate-700 leading-relaxed">
+                          {step}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h5 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-emerald-700" />
+                      <span>{t.resourcesTitle}</span>
+                    </h5>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {activeLesson.resourceChecklist.map((resItem, idx) => (
+                        <div
+                          key={idx}
+                          className="p-3.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-800 flex items-center justify-between gap-3"
+                        >
+                          <span>{resItem}</span>
+                          <button
+                            type="button"
+                            disabled={isTrialBlockingDemo}
+                            onClick={() => downloadStudySheet(activeCourse, activeLesson)}
+                            className="text-emerald-700 hover:text-emerald-950 font-semibold whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-40"
+                          >
+                            {lang === 'ar' ? 'تحميل' : lang === 'en' ? 'Get' : 'Ouvrir'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="p-5 sm:p-6 rounded-xl border border-slate-200 bg-white">
+                    <div className="flex items-center justify-between gap-4 mb-3">
+                      <h5 className="text-sm font-semibold text-slate-900">{t.checkpointTitle}</h5>
+                      {isLessonDone && (
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                          <CheckCircle2 className="w-4 h-4" />
+                          {t.lessonCompleted}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-slate-800 mb-4 leading-relaxed">{activeLesson.checkpoint.question}</p>
+                    <div className="space-y-2 mb-4">
+                      {activeLesson.checkpoint.options.map((opt, idx) => {
+                        const isPicked = selectedOption === idx;
+                        const isCorrectOpt = idx === activeLesson.checkpoint.correctIndex;
+                        let style = 'border-slate-200 bg-white text-slate-800 hover:border-slate-400';
+                        if (checkpointSubmitted) {
+                          if (isCorrectOpt) style = 'border-emerald-700 bg-emerald-50 text-emerald-950';
+                          else if (isPicked) style = 'border-red-400 bg-red-50 text-red-900';
+                        } else if (isPicked) {
+                          style = 'border-slate-900 bg-slate-50 text-slate-900';
+                        }
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            disabled={isTrialBlockingDemo}
+                            onClick={() => {
+                              setSelectedOption(idx);
+                              setCheckpointSubmitted(false);
+                            }}
+                            className={`w-full text-start px-4 py-2.5 rounded-lg border text-sm transition-colors cursor-pointer disabled:opacity-50 ${style}`}
+                          >
+                            {opt}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {checkpointSubmitted && (
+                      <div className="mb-4 p-3.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700 leading-relaxed">
+                        <strong>
+                          {selectedOption === activeLesson.checkpoint.correctIndex
+                            ? lang === 'ar'
+                              ? 'إجابة صحيحة — '
+                              : lang === 'en'
+                                ? 'Correct — '
+                                : 'Exact — '
+                            : lang === 'ar'
+                              ? 'تصحيح — '
+                              : lang === 'en'
+                                ? 'Explanation — '
+                                : 'Correction — '}
+                        </strong>
+                        {activeLesson.checkpoint.explanation}
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        disabled={selectedOption === null || isTrialBlockingDemo}
+                        onClick={handleCheckAnswer}
+                        className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
+                      >
+                        {lang === 'ar' ? 'تحقق من الإجابة' : lang === 'en' ? 'Verify Answer' : 'Vérifier la réponse'}
+                      </button>
+                      {!isLessonDone && (
+                        <button
+                          type="button"
+                          disabled={isTrialBlockingDemo}
+                          onClick={() => onMarkLessonComplete(activeLesson.id)}
+                          className="px-4 py-2 border border-slate-300 hover:border-slate-900 text-slate-800 text-xs font-medium rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
+                        >
+                          {t.markLessonDone}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

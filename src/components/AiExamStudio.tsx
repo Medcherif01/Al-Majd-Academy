@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Clock, Printer, RotateCcw, Sparkles, XCircle } from 'lucide-react';
+import { CheckCircle2, Clock, Lock, Printer, RotateCcw, Sparkles, XCircle } from 'lucide-react';
 import { apiRequest } from '../utils/api';
 import { TRANSLATIONS } from '../i18n/translations';
-import type { GeneratedExam, UiLanguage } from '../types/academy';
+import type { CurriculumKey, GeneratedExam, StudentTrackLock, UiLanguage } from '../types/academy';
 
 interface AiExamStudioProps {
   lang: UiLanguage;
   token: string | null;
   initialExam?: GeneratedExam | null;
   initialCurriculum?: string | null;
+  trackLock: StudentTrackLock | null;
+  hasPaidAccess: boolean;
+  trialExpired: boolean;
+  onUpgradePrompt?: () => void;
   onExamSaved?: (exam: GeneratedExam) => void;
 }
 
@@ -22,19 +26,56 @@ const CURRICULUM_SUBJECTS: Record<string, string[]> = {
   'Baccalauréat Français (AEFE)': ['Mathématiques Spécialité', 'Physique-Chimie Spécialité', 'SVT Spécialité', 'Français (Première)'],
 };
 
+function mapTrackKeyToAiCurricula(trackKey: Exclude<CurriculumKey, 'all'>): string[] {
+  switch (trackKey) {
+    case 'american':
+      return ['American Digital SAT', 'American AP'];
+    case 'ib':
+      return ['IB Diploma (DP)'];
+    case 'british':
+      return ['Cambridge IGCSE / A-Level'];
+    case 'nafes':
+      return ['NAFES / نافس (ETEC)'];
+    case 'qiyas':
+      return ['Qudurat & Tahsili (قياس)'];
+    case 'french':
+      return ['Baccalauréat Français (AEFE)'];
+  }
+}
+
 export function AiExamStudio({
   lang,
   token,
   initialExam,
   initialCurriculum,
+  trackLock,
+  hasPaidAccess,
+  trialExpired,
+  onUpgradePrompt,
   onExamSaved,
 }: AiExamStudioProps) {
   const t = TRANSLATIONS[lang];
-  const [curriculum, setCurriculum] = useState<string>(initialCurriculum || 'IB Diploma (DP)');
+  const isLocked = Boolean(trackLock && !hasPaidAccess);
+  const allowedCurricula = isLocked && trackLock
+    ? mapTrackKeyToAiCurricula(trackLock.trackKey)
+    : Object.keys(CURRICULUM_SUBJECTS);
+
+  const defaultCurr =
+    (initialCurriculum && allowedCurricula.includes(initialCurriculum) && initialCurriculum) ||
+    allowedCurricula[0] ||
+    'IB Diploma (DP)';
+
+  const [curriculum, setCurriculum] = useState<string>(defaultCurr);
   const [subject, setSubject] = useState<string>(
-    (CURRICULUM_SUBJECTS[initialCurriculum || 'IB Diploma (DP)'] || ['Mathematics'])[0]
+    (CURRICULUM_SUBJECTS[defaultCurr] || ['Mathematics'])[0]
   );
-  const [examLanguage, setExamLanguage] = useState<'Français' | 'English' | 'العربية'>('English');
+  const [examLanguage, setExamLanguage] = useState<'Français' | 'English' | 'العربية'>(
+    defaultCurr.includes('NAFES') || defaultCurr.includes('Qudurat')
+      ? 'العربية'
+      : defaultCurr.includes('Baccalauréat')
+        ? 'Français'
+        : 'English'
+  );
   const [difficulty, setDifficulty] = useState<'Standard' | 'Avancé / HL' | 'Intensif Examen'>('Avancé / HL');
   const [topic, setTopic] = useState<string>('');
   const [questionCount, setQuestionCount] = useState<number>(4);
@@ -49,7 +90,25 @@ export function AiExamStudio({
   const [secondsElapsed, setSecondsElapsed] = useState(0);
 
   useEffect(() => {
-    if (initialCurriculum && CURRICULUM_SUBJECTS[initialCurriculum]) {
+    if (isLocked && trackLock) {
+      const list = mapTrackKeyToAiCurricula(trackLock.trackKey);
+      if (!list.includes(curriculum)) {
+        const next = list[0];
+        setCurriculum(next);
+        setSubject((CURRICULUM_SUBJECTS[next] || ['Mathematics'])[0]);
+        setExamLanguage(
+          next.includes('NAFES') || next.includes('Qudurat')
+            ? 'العربية'
+            : next.includes('Baccalauréat')
+              ? 'Français'
+              : 'English'
+        );
+      }
+    }
+  }, [isLocked, trackLock, curriculum]);
+
+  useEffect(() => {
+    if (initialCurriculum && CURRICULUM_SUBJECTS[initialCurriculum] && allowedCurricula.includes(initialCurriculum)) {
       setCurriculum(initialCurriculum);
       setSubject(CURRICULUM_SUBJECTS[initialCurriculum][0]);
       if (initialCurriculum.includes('NAFES') || initialCurriculum.includes('Qudurat')) {
@@ -94,6 +153,12 @@ export function AiExamStudio({
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (trialExpired && !hasPaidAccess) {
+      setError(
+        'Votre essai gratuit de 30 minutes est terminé. Veuillez souscrire à un cours payant ou réserver un formateur.'
+      );
+      return;
+    }
     setError('');
     setGenerating(true);
     try {
@@ -133,7 +198,7 @@ export function AiExamStudio({
     for (const q of activeExam.questions) {
       const userAns = (answers[q.number] || '').trim().toLowerCase();
       const canonical = q.correctAnswer.trim().toLowerCase();
-      if (userAns && (userAns === canonical || canonical.includes(userAns) && userAns.length > 1)) {
+      if (userAns && (userAns === canonical || (canonical.includes(userAns) && userAns.length > 1))) {
         earned += q.points;
       }
     }
@@ -144,7 +209,7 @@ export function AiExamStudio({
 
   return (
     <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14">
-      <div className="mb-10 max-w-3xl">
+      <div className="mb-8 max-w-3xl">
         <p className="text-xs font-semibold tracking-wide text-emerald-800 mb-2">
           Gemini AI · International Exam Standards
         </p>
@@ -153,6 +218,35 @@ export function AiExamStudio({
         </h2>
         <p className="mt-3 text-base text-slate-600 leading-relaxed">{t.aiStudioSubtitle}</p>
       </div>
+
+      {isLocked && trackLock && (
+        <div className="mb-6 p-4 rounded-xl bg-[#EEF5F9] border border-[#BFD8E6] flex items-center gap-3 text-xs sm:text-sm text-[#0F2537]">
+          <Lock className="w-4 h-4 text-[#0B6E8C] shrink-0" />
+          <span>
+            Générateur restreint à votre parcours verrouillé :{' '}
+            <strong className="text-[#0B6E8C]">
+              {trackLock.gradeLevel.toUpperCase()} · {trackLock.curriculum}
+            </strong>
+          </span>
+        </div>
+      )}
+
+      {trialExpired && !hasPaidAccess && (
+        <div className="mb-6 p-5 rounded-xl bg-amber-50 border border-amber-300 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="text-sm text-amber-950">
+            <strong>Essai gratuit de 30 minutes expiré.</strong> Débloquez un cours payant ou réservez un formateur pour continuer à générer des examens Gemini IA.
+          </div>
+          {onUpgradePrompt && (
+            <button
+              type="button"
+              onClick={onUpgradePrompt}
+              className="px-4 py-2 bg-[#0B6E8C] text-white text-xs font-semibold rounded-xl shrink-0 cursor-pointer"
+            >
+              Débloquer l’accès complet
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Left Control Panel */}
@@ -166,10 +260,11 @@ export function AiExamStudio({
             </label>
             <select
               value={curriculum}
+              disabled={allowedCurricula.length <= 1}
               onChange={(e) => handleCurriculumChange(e.target.value)}
-              className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-700"
+              className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-700 disabled:bg-slate-50"
             >
-              {Object.keys(CURRICULUM_SUBJECTS).map((curr) => (
+              {allowedCurricula.map((curr) => (
                 <option key={curr} value={curr}>
                   {curr}
                 </option>
@@ -274,7 +369,7 @@ export function AiExamStudio({
 
           <button
             type="submit"
-            disabled={generating}
+            disabled={generating || (trialExpired && !hasPaidAccess)}
             className="w-full py-3 px-4 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-sm font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
           >
             <Sparkles className="w-4 h-4" />
@@ -311,7 +406,6 @@ export function AiExamStudio({
               className="bg-white border border-slate-200 rounded-xl overflow-hidden"
               dir={activeExam.language === 'العربية' ? 'rtl' : 'ltr'}
             >
-              {/* Exam Paper Header */}
               <div className="p-6 sm:p-8 bg-slate-900 text-white">
                 <div className="flex flex-wrap items-center justify-between gap-4 mb-3">
                   <div className="text-xs text-emerald-300 font-medium">
@@ -346,7 +440,6 @@ export function AiExamStudio({
                 </p>
               </div>
 
-              {/* Questions List */}
               <div className="p-6 sm:p-8 space-y-6">
                 {activeExam.questions.map((q) => {
                   const userChoice = answers[q.number] || '';
@@ -422,9 +515,7 @@ export function AiExamStudio({
                             {isCorrect ? (
                               <>
                                 <CheckCircle2 className="w-4 h-4 text-emerald-700" />
-                                <span className="text-emerald-800">
-                                  {q.correctAnswer}
-                                </span>
+                                <span className="text-emerald-800">{q.correctAnswer}</span>
                               </>
                             ) : (
                               <>
@@ -457,7 +548,6 @@ export function AiExamStudio({
                   );
                 })}
 
-                {/* Footer Grading Action */}
                 <div className="pt-6 border-t border-slate-200 flex flex-wrap items-center justify-between gap-4">
                   {!submitted ? (
                     <button

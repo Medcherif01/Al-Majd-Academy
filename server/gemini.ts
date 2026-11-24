@@ -26,7 +26,7 @@ export interface GeneratedExamPayload {
   }[];
 }
 
-function getGeminiClient(): GoogleGenAI {
+export function getGeminiClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY_MISSING');
@@ -39,6 +39,109 @@ function getGeminiClient(): GoogleGenAI {
       },
     },
   });
+}
+
+function isTransientGeminiError(err: unknown): boolean {
+  const raw =
+    err instanceof Error
+      ? `${err.message} ${JSON.stringify(err)}`
+      : String(err ?? '');
+  const upper = raw.toUpperCase();
+  return (
+    upper.includes('503') ||
+    upper.includes('429') ||
+    upper.includes('UNAVAILABLE') ||
+    upper.includes('RESOURCE_EXHAUSTED') ||
+    upper.includes('HIGH DEMAND') ||
+    upper.includes('OVERLOADED') ||
+    upper.includes('TIMEOUT') ||
+    upper.includes('ECONNRESET')
+  );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export class GeminiUnavailableError extends Error {
+  status = 503;
+  constructor(message: string) {
+    super(message);
+    this.name = 'GeminiUnavailableError';
+  }
+}
+
+/**
+ * Calls Gemini with exponential backoff retries on the primary model (`gemini-4-hydrogen`)
+ * and automatic fallback to `gemini-3.1-flash-lite` (valid free-tier model, omitting thinkingConfig)
+ * whenever upstream experiences temporary 503/429 high-demand spikes.
+ */
+export async function generateContentWithResilience(
+  ai: GoogleGenAI,
+  params: {
+    contents: string;
+    systemInstruction?: string;
+    useThinkingMedium?: boolean;
+    responseMimeType?: string;
+    responseSchema?: any;
+  }
+) {
+  const attempts: { model: 'gemini-4-hydrogen' | 'gemini-3.1-flash-lite'; delayMs: number; withThinking: boolean }[] = [
+    { model: 'gemini-4-hydrogen', delayMs: 0, withThinking: Boolean(params.useThinkingMedium) },
+    { model: 'gemini-3.1-flash-lite', delayMs: 400, withThinking: false },
+    { model: 'gemini-3.1-flash-lite', delayMs: 900, withThinking: false },
+  ];
+
+  let lastError: unknown = null;
+
+  for (const attempt of attempts) {
+    if (attempt.delayMs > 0) {
+      await sleep(attempt.delayMs);
+    }
+    try {
+      const config: Record<string, any> = {};
+      if (params.systemInstruction) {
+        config.systemInstruction = params.systemInstruction;
+      }
+      if (attempt.withThinking && attempt.model === 'gemini-4-hydrogen') {
+        config.thinkingConfig = { thinkingLevel: ThinkingLevel.MEDIUM };
+      }
+      if (params.responseMimeType) {
+        config.responseMimeType = params.responseMimeType;
+      }
+      if (params.responseSchema) {
+        config.responseSchema = params.responseSchema;
+      }
+
+      const response = await ai.models.generateContent({
+        model: attempt.model,
+        contents: params.contents,
+        config,
+      });
+
+      const text = (response.text ?? '').trim();
+      if (!text) {
+        throw new Error('EMPTY_GEMINI_RESPONSE');
+      }
+      return response;
+    } catch (err) {
+      lastError = err;
+      if (!isTransientGeminiError(err) && (err as Error)?.message !== 'EMPTY_GEMINI_RESPONSE') {
+        throw err;
+      }
+      console.warn(
+        `Gemini transient failure on ${attempt.model}, attempting next fallback/retry:`,
+        (err as Error)?.message || err
+      );
+    }
+  }
+
+  if (isTransientGeminiError(lastError)) {
+    throw new GeminiUnavailableError(
+      'Le service Gemini connaît actuellement un pic de demande temporaire (503). Veuillez réessayer dans quelques secondes.'
+    );
+  }
+  throw lastError instanceof Error ? lastError : new Error('Gemini generation failed');
 }
 
 export async function generateInternationalExam(input: GenerateExamInput): Promise<GeneratedExamPayload> {
@@ -69,69 +172,61 @@ Every question must include a detailed "officialExplanation" showing step-by-ste
 
 Ensure mathematical clarity (clean readable notation like x^2, sqrt(x), fractions a/b) and authentic Saudi international school context where relevant.`;
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-4-hydrogen',
+  const response = await generateContentWithResilience(ai, {
     contents: prompt,
-    config: {
-      systemInstruction,
-      thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          title: { type: Type.STRING, description: 'Official-style title of the generated exam paper.' },
-          officialRulesSummary: {
-            type: Type.STRING,
-            description: 'Concise summary of the official exam rules (calculator policy, timing, grading criteria).',
-          },
-          durationMinutes: { type: Type.INTEGER, description: 'Recommended duration in minutes.' },
-          totalMarks: { type: Type.INTEGER, description: 'Sum of all question points.' },
-          questions: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                number: { type: Type.INTEGER },
-                questionType: { type: Type.STRING, description: 'Either "mcq" or "short_answer".' },
-                prompt: { type: Type.STRING },
-                options: {
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING },
-                },
-                correctAnswer: { type: Type.STRING },
-                points: { type: Type.INTEGER },
-                officialExplanation: { type: Type.STRING },
-                examinerTip: { type: Type.STRING },
+    systemInstruction,
+    useThinkingMedium: true,
+    responseMimeType: 'application/json',
+    responseSchema: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING, description: 'Official-style title of the generated exam paper.' },
+        officialRulesSummary: {
+          type: Type.STRING,
+          description: 'Concise summary of the official exam rules (calculator policy, timing, grading criteria).',
+        },
+        durationMinutes: { type: Type.INTEGER, description: 'Recommended duration in minutes.' },
+        totalMarks: { type: Type.INTEGER, description: 'Sum of all question points.' },
+        questions: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              number: { type: Type.INTEGER },
+              questionType: { type: Type.STRING, description: 'Either "mcq" or "short_answer".' },
+              prompt: { type: Type.STRING },
+              options: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
               },
-              required: [
-                'number',
-                'questionType',
-                'prompt',
-                'options',
-                'correctAnswer',
-                'points',
-                'officialExplanation',
-                'examinerTip',
-              ],
+              correctAnswer: { type: Type.STRING },
+              points: { type: Type.INTEGER },
+              officialExplanation: { type: Type.STRING },
+              examinerTip: { type: Type.STRING },
             },
+            required: [
+              'number',
+              'questionType',
+              'prompt',
+              'options',
+              'correctAnswer',
+              'points',
+              'officialExplanation',
+              'examinerTip',
+            ],
           },
         },
-        required: ['title', 'officialRulesSummary', 'durationMinutes', 'totalMarks', 'questions'],
       },
+      required: ['title', 'officialRulesSummary', 'durationMinutes', 'totalMarks', 'questions'],
     },
   });
 
   const rawText = (response.text ?? '').trim();
-  if (!rawText) {
-    throw new Error('EMPTY_GEMINI_RESPONSE');
-  }
-
   const parsed = JSON.parse(rawText) as GeneratedExamPayload;
   if (!Array.isArray(parsed.questions) || parsed.questions.length === 0) {
     throw new Error('INVALID_GEMINI_STRUCTURE');
   }
 
-  // Normalize question types and totalMarks
   parsed.questions = parsed.questions.map((q, idx) => ({
     number: idx + 1,
     questionType: q.options && q.options.length >= 2 ? 'mcq' : 'short_answer',
@@ -153,29 +248,26 @@ export async function evaluateWritingWithGemini(input: {
   content: string;
 }): Promise<{ suggestedScore: number; feedback: string }> {
   const ai = getGeminiClient();
-  const response = await ai.models.generateContent({
-    model: 'gemini-4-hydrogen',
+  const response = await generateContentWithResilience(ai, {
     contents: `You are an expert international exam writing grader (${input.track}).
 Prompt: ${input.prompt}
 Student Essay: ${input.content}
 
 Grade on a 0-100 percentage scale (or IELTS/STEP equivalent converted to 0-100) and provide concise, actionable feedback covering structure, grammar/lexis, and official rubric alignment in the language of the essay.`,
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          suggestedScore: { type: Type.INTEGER },
-          feedback: { type: Type.STRING },
-        },
-        required: ['suggestedScore', 'feedback'],
+    responseMimeType: 'application/json',
+    responseSchema: {
+      type: Type.OBJECT,
+      properties: {
+        suggestedScore: { type: Type.INTEGER },
+        feedback: { type: Type.STRING },
       },
+      required: ['suggestedScore', 'feedback'],
     },
   });
+
   const parsed = JSON.parse((response.text ?? '{}').trim());
   return {
     suggestedScore: Math.min(100, Math.max(0, Number(parsed.suggestedScore) || 75)),
     feedback: String(parsed.feedback || 'Rédaction structurée. Poursuivez le travail sur les transitions académiques.'),
   };
 }
-
