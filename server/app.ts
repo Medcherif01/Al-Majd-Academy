@@ -1197,41 +1197,14 @@ export function createApiApp() {
     }
   });
 
-  async function ensureDefaultTeacherCredentialsSeeded() {
-    try {
-      const hasStored = await db.hasAnyTeacherCredentials();
-      if (!hasStored) {
-        const marwanHash = hashPassword('030590');
-        await db.saveTeacherCredential({
-          teacherId: 'marwan',
-          loginAliases: ['marwen03', 'marwan', 'rmarwan26@alekhaaschools.com', 'marwan mhamdi'],
-          passwordHash: marwanHash.hash,
-          salt: marwanHash.salt,
-        });
-
-        const mohamedHash = hashPassword('120786');
-        await db.saveTeacherCredential({
-          teacherId: 'mohamed',
-          loginAliases: ['med01', 'mohamed', 'm.cherif@almajd-academy.sa', 'cherifmed2030@gmail.com', 'mohamed cherif'],
-          passwordHash: mohamedHash.hash,
-          salt: mohamedHash.salt,
-        });
-      }
-    } catch (e) {
-      console.error('Error auto-seeding teacher credentials:', e);
-    }
-  }
-
-  ensureDefaultTeacherCredentialsSeeded();
-
   // --- Private Teacher Portal Authentication (Password + Login Gate) ---
   app.get('/api/teacher/auth/status', async (_req, res) => {
-    await ensureDefaultTeacherCredentialsSeeded();
     const envPass = process.env.TEACHER_PORTAL_PASSCODE?.trim();
     const hasStored = await db.hasAnyTeacherCredentials();
     res.json({
       configured: Boolean(envPass) || hasStored,
-      envManaged: Boolean(envPass),
+      envManaged: false,
+      usesEnvPasscode: false,
     });
   });
 
@@ -1255,14 +1228,14 @@ export function createApiApp() {
       const { hash, salt } = hashPassword(password.trim());
       const marwanEmail = isNonEmptyString(marwanLogin, 120)
         ? marwanLogin.trim().toLowerCase()
-        : 'marwen03';
+        : 'marwen05';
       const mohamedEmail = isNonEmptyString(mohamedLogin, 120)
         ? mohamedLogin.trim().toLowerCase()
         : 'med01';
 
       await db.saveTeacherCredential({
         teacherId: 'marwan',
-        loginAliases: [marwanEmail, 'marwen03', 'marwan', 'rmarwan26@alekhaaschools.com', 'marwan mhamdi'],
+        loginAliases: [marwanEmail, 'marwen05', 'marwan', 'rmarwan26@alekhaaschools.com', 'marwan mhamdi'],
         passwordHash: hash,
         salt,
       });
@@ -1297,7 +1270,6 @@ export function createApiApp() {
 
   app.post('/api/teacher/auth/login', async (req, res) => {
     try {
-      await ensureDefaultTeacherCredentialsSeeded();
       const { login, password } = req.body ?? {};
       if (!isNonEmptyString(login, 120) || !isNonEmptyString(password, 128)) {
         res.status(400).json({ error: 'Identifiant (login) et mot de passe requis.' });
@@ -1305,8 +1277,20 @@ export function createApiApp() {
       }
 
       const cleanLogin = login.trim().toLowerCase();
-      const envPass = process.env.TEACHER_PORTAL_PASSCODE?.trim();
+      const creds = await db.getTeacherCredentials();
 
+      if (creds.length > 0) {
+        const matched = creds.find((c) => c.loginAliases.includes(cleanLogin));
+        if (!matched || !verifyPassword(password.trim(), matched.passwordHash, matched.salt)) {
+          res.status(401).json({ error: 'Identifiant ou mot de passe formateur incorrect.' });
+          return;
+        }
+        const token = signTeacherToken(matched.teacherId, cleanLogin);
+        res.json({ token, teacherId: matched.teacherId, login: cleanLogin });
+        return;
+      }
+
+      const envPass = process.env.TEACHER_PORTAL_PASSCODE?.trim();
       if (envPass) {
         const a = Buffer.from(password.trim());
         const b = Buffer.from(envPass);
@@ -1315,28 +1299,17 @@ export function createApiApp() {
           return;
         }
         const resolvedTid: 'marwan' | 'mohamed' =
-          cleanLogin.includes('mohamed') || cleanLogin.includes('cherif') || cleanLogin.includes('med01') ? 'mohamed' : 'marwan';
+          cleanLogin.includes('mohamed') || cleanLogin.includes('cherif') || cleanLogin === 'med01'
+            ? 'mohamed'
+            : 'marwan';
         const token = signTeacherToken(resolvedTid, cleanLogin);
         res.json({ token, teacherId: resolvedTid, login: cleanLogin });
         return;
       }
 
-      const creds = await db.getTeacherCredentials();
-      if (creds.length === 0) {
-        res.status(412).json({
-          error: 'Aucun mot de passe formateur configuré. Veuillez initialiser l’accès formateur.',
-        });
-        return;
-      }
-
-      const matched = creds.find((c) => c.loginAliases.includes(cleanLogin));
-      if (!matched || !verifyPassword(password.trim(), matched.passwordHash, matched.salt)) {
-        res.status(401).json({ error: 'Identifiant ou mot de passe formateur incorrect.' });
-        return;
-      }
-
-      const token = signTeacherToken(matched.teacherId, cleanLogin);
-      res.json({ token, teacherId: matched.teacherId, login: cleanLogin });
+      res.status(412).json({
+        error: 'Aucun mot de passe formateur configuré. Veuillez initialiser l’accès formateur.',
+      });
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Erreur lors de l’authentification.' });
     }
@@ -1344,65 +1317,6 @@ export function createApiApp() {
 
   app.get('/api/teacher/auth/me', requireTeacherAuth, (req: AuthenticatedRequest, res) => {
     res.json({ teacher: req.teacher });
-  });
-
-  app.post('/api/teacher/auth/update-credentials', requireTeacherAuth, async (req: AuthenticatedRequest, res) => {
-    try {
-      await ensureDefaultTeacherCredentialsSeeded();
-      const teacherId = req.teacher!.teacherId;
-      const { newLogin, newPassword, currentPassword } = req.body ?? {};
-
-      const creds = await db.getTeacherCredentials();
-      const currentCred = creds.find(c => c.teacherId === teacherId);
-
-      if (!currentCred) {
-        res.status(404).json({ error: 'Identifiants formateur introuvables.' });
-        return;
-      }
-
-      if (currentPassword && !verifyPassword(String(currentPassword).trim(), currentCred.passwordHash, currentCred.salt)) {
-        res.status(401).json({ error: 'Mot de passe actuel incorrect.' });
-        return;
-      }
-
-      let newHash = currentCred.passwordHash;
-      let newSalt = currentCred.salt;
-
-      if (newPassword) {
-        if (typeof newPassword !== 'string' || newPassword.trim().length < 6) {
-          res.status(400).json({ error: 'Le nouveau mot de passe doit contenir au moins 6 caractères.' });
-          return;
-        }
-        const hashed = hashPassword(newPassword.trim());
-        newHash = hashed.hash;
-        newSalt = hashed.salt;
-      }
-
-      let aliases = [...currentCred.loginAliases];
-      if (newLogin && typeof newLogin === 'string' && newLogin.trim().length > 0) {
-        const cleanNewLogin = newLogin.trim().toLowerCase();
-        aliases = [cleanNewLogin, ...aliases];
-      }
-
-      await db.saveTeacherCredential({
-        teacherId,
-        loginAliases: aliases,
-        passwordHash: newHash,
-        salt: newSalt,
-      });
-
-      const updatedLogin = aliases[0];
-      const newToken = signTeacherToken(teacherId, updatedLogin);
-
-      res.json({
-        success: true,
-        token: newToken,
-        login: updatedLogin,
-        message: 'Identifiants mis à jour avec succès.',
-      });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message || 'Erreur lors de la mise à jour des identifiants.' });
-    }
   });
 
   // Protect ALL remaining /api/teacher/* administrative endpoints
@@ -1853,12 +1767,82 @@ export function createApiApp() {
     }
   });
 
+  // --- Teacher Admin: Self-Service Account (Own Name & Password Only) ---
+  app.put('/api/teacher/account', async (req: AuthenticatedRequest, res) => {
+    try {
+      const tid = req.teacher?.teacherId;
+      if (tid !== 'marwan' && tid !== 'mohamed') {
+        res.status(401).json({ error: 'Session formateur invalide.' });
+        return;
+      }
+
+      const { name, currentPassword, newPassword } = req.body ?? {};
+      const wantsNameUpdate = typeof name === 'string' && name.trim().length > 0;
+      const wantsPasswordUpdate = typeof newPassword === 'string' && newPassword.trim().length > 0;
+
+      if (!wantsNameUpdate && !wantsPasswordUpdate) {
+        res.status(400).json({ error: 'Indiquez un nouveau nom ou un nouveau mot de passe.' });
+        return;
+      }
+
+      let updatedTrainerName: string | undefined;
+
+      if (wantsNameUpdate) {
+        if (!isNonEmptyString(name, 100)) {
+          res.status(400).json({ error: 'Nom invalide (1 à 100 caractères).' });
+          return;
+        }
+        const updatedProfile = await db.updateTrainerProfile(tid, { name: name.trim() });
+        if (!updatedProfile) {
+          res.status(404).json({ error: 'Profil formateur introuvable.' });
+          return;
+        }
+        updatedTrainerName = updatedProfile.name;
+      }
+
+      if (wantsPasswordUpdate) {
+        if (!isNonEmptyString(currentPassword, 128)) {
+          res.status(400).json({ error: 'Saisissez votre mot de passe actuel pour le modifier.' });
+          return;
+        }
+        if (!isNonEmptyString(newPassword, 128) || newPassword.trim().length < 6) {
+          res.status(400).json({ error: 'Le nouveau mot de passe doit contenir au moins 6 caractères.' });
+          return;
+        }
+        const cred = await db.findTeacherCredentialById(tid);
+        if (!cred || !verifyPassword(currentPassword.trim(), cred.passwordHash, cred.salt)) {
+          res.status(401).json({ error: 'Mot de passe actuel incorrect.' });
+          return;
+        }
+        const { hash, salt } = hashPassword(newPassword.trim());
+        const saved = await db.updateTeacherPassword(tid, hash, salt);
+        if (!saved) {
+          res.status(500).json({ error: 'Impossible de mettre à jour le mot de passe.' });
+          return;
+        }
+      }
+
+      res.json({
+        ok: true,
+        teacherId: tid,
+        name: updatedTrainerName,
+        passwordChanged: wantsPasswordUpdate,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de la mise à jour du compte.' });
+    }
+  });
+
   // --- Teacher Admin: Update Profile, Photo, Experiences & Skills ---
-  app.put('/api/teacher/profile/:trainerId', async (req, res) => {
+  app.put('/api/teacher/profile/:trainerId', async (req: AuthenticatedRequest, res) => {
     try {
       const tid = req.params.trainerId === 'mohamed' ? 'mohamed' : req.params.trainerId === 'marwan' ? 'marwan' : null;
       if (!tid) {
         res.status(400).json({ error: 'Formateur invalide.' });
+        return;
+      }
+      if (req.teacher?.teacherId !== tid) {
+        res.status(403).json({ error: 'Vous ne pouvez modifier que votre propre profil formateur.' });
         return;
       }
 

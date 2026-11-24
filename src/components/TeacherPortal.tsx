@@ -156,16 +156,17 @@ export function TeacherPortal({
 }: TeacherPortalProps) {
   // Private Teacher Authentication State (memory-only token)
   const [teacherToken, setTeacherToken] = useState<string | null>(null);
+  const [loggedInTeacherId, setLoggedInTeacherId] = useState<'marwan' | 'mohamed' | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
   const [authConfigured, setAuthConfigured] = useState(false);
   const [authUsesEnvPasscode, setAuthUsesEnvPasscode] = useState(false);
-  const [authLoginInput, setAuthLoginInput] = useState('rmarwan26@alekhaaschools.com');
+  const [authLoginInput, setAuthLoginInput] = useState('Marwen05');
   const [authPasswordInput, setAuthPasswordInput] = useState('');
   const [authShowPassword, setAuthShowPassword] = useState(false);
   const [authError, setAuthError] = useState('');
   const [authSubmitting, setAuthSubmitting] = useState(false);
-  const [setupMarwanLogin, setSetupMarwanLogin] = useState('rmarwan26@alekhaaschools.com');
-  const [setupMohamedLogin, setSetupMohamedLogin] = useState('m.cherif@almajd-academy.sa');
+  const [setupMarwanLogin, setSetupMarwanLogin] = useState('Marwen05');
+  const [setupMohamedLogin, setSetupMohamedLogin] = useState('med01');
   const [setupPassword, setSetupPassword] = useState('');
   const [setupConfirm, setSetupConfirm] = useState('');
 
@@ -257,7 +258,19 @@ export function TeacherPortal({
   const [adminPaperFilter, setAdminPaperFilter] = useState<string>('all');
 
   // Teacher Profile, Photo, Experiences & Skills Editor
+  const marwanDisplayName = trainers.find((tr) => tr.id === 'marwan')?.name || 'Marwan Mhamdi';
+  const mohamedDisplayName = trainers.find((tr) => tr.id === 'mohamed')?.name || 'Mohamed Cherif';
+  const ownTrainerObj =
+    (loggedInTeacherId ? trainers.find((tr) => tr.id === loggedInTeacherId) : null) || null;
   const activeTrainerObj = trainers.find((tr) => tr.id === teacherId) || null;
+  const isEditingOwnProfile = !loggedInTeacherId || loggedInTeacherId === teacherId;
+  const [accountNameInput, setAccountNameInput] = useState('');
+  const [savingAccountName, setSavingAccountName] = useState(false);
+  const [currentPasswordInput, setCurrentPasswordInput] = useState('');
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [confirmNewPasswordInput, setConfirmNewPasswordInput] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [passwordChangeError, setPasswordChangeError] = useState('');
   const [profName, setProfName] = useState('');
   const [profRoleTitle, setProfRoleTitle] = useState('');
   const [profPhotoUrl, setProfPhotoUrl] = useState('');
@@ -276,54 +289,6 @@ export function TeacherPortal({
   const [profSlots, setProfSlots] = useState<string[]>([]);
   const [newSlot, setNewSlot] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
-
-  const [showCredentialModal, setShowCredentialModal] = useState(false);
-  const [newLoginInput, setNewLoginInput] = useState('');
-  const [currentPasswordInput, setCurrentPasswordInput] = useState('');
-  const [newPasswordInput, setNewPasswordInput] = useState('');
-  const [confirmNewPasswordInput, setConfirmNewPasswordInput] = useState('');
-  const [credentialSubmitting, setCredentialSubmitting] = useState(false);
-  const [credentialMessage, setCredentialMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  const handleUpdateCredentials = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!teacherToken) return;
-    if (newPasswordInput && newPasswordInput.length < 6) {
-      setCredentialMessage({ type: 'error', text: 'Le nouveau mot de passe doit contenir au moins 6 caractères.' });
-      return;
-    }
-    if (newPasswordInput && newPasswordInput !== confirmNewPasswordInput) {
-      setCredentialMessage({ type: 'error', text: 'Les nouveaux mots de passe ne correspondent pas.' });
-      return;
-    }
-    setCredentialSubmitting(true);
-    setCredentialMessage(null);
-    try {
-      const res = await apiRequest<{ token: string; login: string; message: string }>('/api/teacher/auth/update-credentials', {
-        method: 'POST',
-        token: teacherToken,
-        body: {
-          newLogin: newLoginInput.trim() || undefined,
-          currentPassword: currentPasswordInput.trim() || undefined,
-          newPassword: newPasswordInput.trim() || undefined,
-        },
-      });
-      setTeacherToken(res.token);
-      setCredentialMessage({ type: 'success', text: res.message || 'Identifiants mis à jour avec succès.' });
-      setCurrentPasswordInput('');
-      setNewPasswordInput('');
-      setConfirmNewPasswordInput('');
-      setNewLoginInput('');
-      setTimeout(() => {
-        setShowCredentialModal(false);
-        setCredentialMessage(null);
-      }, 2000);
-    } catch (err: any) {
-      setCredentialMessage({ type: 'error', text: err?.message || 'Erreur lors de la mise à jour des identifiants.' });
-    } finally {
-      setCredentialSubmitting(false);
-    }
-  };
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -386,6 +351,7 @@ export function TeacherPortal({
       });
       setAuthConfigured(true);
       setTeacherToken(res.token);
+      setLoggedInTeacherId(res.teacherId);
       setTeacherId(res.teacherId);
       setSetupPassword('');
       setSetupConfirm('');
@@ -413,6 +379,7 @@ export function TeacherPortal({
         },
       });
       setTeacherToken(res.token);
+      setLoggedInTeacherId(res.teacherId);
       setTeacherId(res.teacherId);
       setAuthPasswordInput('');
     } catch (err: any) {
@@ -501,6 +468,11 @@ export function TeacherPortal({
     setPaperLanguage(teacherId === 'mohamed' ? 'Français' : 'English');
     setPaperCategory(teacherId === 'mohamed' ? 'NAFES (ETEC)' : 'IB Diploma');
   }, [teacherId, teacherToken, fetchOverview, fetchAccounts]);
+
+  useEffect(() => {
+    if (!ownTrainerObj) return;
+    setAccountNameInput(ownTrainerObj.name);
+  }, [ownTrainerObj]);
 
   useEffect(() => {
     if (!activeTrainerObj) return;
@@ -663,7 +635,7 @@ export function TeacherPortal({
           body: {
             score: reviewScore,
             teacherFeedback: reviewFeedback,
-            reviewedBy: teacherId === 'marwan' ? 'Mr. Marwan Mhamdi' : 'M. Mohamed Cherif',
+            reviewedBy: teacherId === 'marwan' ? marwanDisplayName : mohamedDisplayName,
           },
         }
       );
@@ -728,7 +700,7 @@ export function TeacherPortal({
             weaknesses,
             attributedSkills: reportSkills,
             teacherFeedback: reportFeedback,
-            reviewedBy: teacherId === 'marwan' ? 'Mr. Marwan Mhamdi' : 'M. Mohamed Cherif',
+            reviewedBy: teacherId === 'marwan' ? marwanDisplayName : mohamedDisplayName,
           },
         }
       );
@@ -840,7 +812,7 @@ export function TeacherPortal({
 
   const handleSaveTrainerProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!teacherToken) return;
+    if (!teacherToken || !isEditingOwnProfile) return;
     setSavingProfile(true);
     try {
       await apiRequest(`/api/teacher/profile/${teacherId}`, {
@@ -868,6 +840,58 @@ export function TeacherPortal({
       showToast(err?.message || 'Erreur lors de l’enregistrement du profil.');
     } finally {
       setSavingProfile(false);
+    }
+  };
+
+  const handleUpdateOwnName = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!teacherToken || !accountNameInput.trim()) return;
+    setSavingAccountName(true);
+    try {
+      await apiRequest('/api/teacher/account', {
+        method: 'PUT',
+        token: teacherToken,
+        body: { name: accountNameInput.trim() },
+      });
+      await onTrainersUpdated?.();
+      showToast('Votre nom affiché a été mis à jour.');
+    } catch (err: any) {
+      showToast(err?.message || 'Impossible de modifier le nom.');
+    } finally {
+      setSavingAccountName(false);
+    }
+  };
+
+  const handleUpdateOwnPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!teacherToken) return;
+    setPasswordChangeError('');
+    if (newPasswordInput.trim().length < 6) {
+      setPasswordChangeError('Le nouveau mot de passe doit contenir au moins 6 caractères.');
+      return;
+    }
+    if (newPasswordInput !== confirmNewPasswordInput) {
+      setPasswordChangeError('Les deux nouveaux mots de passe ne correspondent pas.');
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      await apiRequest('/api/teacher/account', {
+        method: 'PUT',
+        token: teacherToken,
+        body: {
+          currentPassword: currentPasswordInput,
+          newPassword: newPasswordInput,
+        },
+      });
+      setCurrentPasswordInput('');
+      setNewPasswordInput('');
+      setConfirmNewPasswordInput('');
+      showToast('Votre mot de passe privé a été modifié avec succès.');
+    } catch (err: any) {
+      setPasswordChangeError(err?.message || 'Impossible de modifier le mot de passe.');
+    } finally {
+      setSavingPassword(false);
     }
   };
 
@@ -1023,41 +1047,36 @@ export function TeacherPortal({
                 <div className="grid grid-cols-2 gap-2 mb-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      setAuthLoginInput('Marwen03');
-                      setAuthPasswordInput('030590');
-                    }}
+                    onClick={() => setAuthLoginInput('Marwen05')}
                     className={`px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer ${
-                      authLoginInput.toLowerCase().includes('marwan') || authLoginInput.toLowerCase().includes('marwen')
+                      authLoginInput.toLowerCase().includes('marw')
                         ? 'border-[#0B6E8C] bg-[#EEF5F9] text-[#0F2537]'
                         : 'border-slate-200 text-slate-600'
                     }`}
                   >
-                    Marwen (Marwen03 / 030590)
+                    {marwanDisplayName}
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      setAuthLoginInput('Med01');
-                      setAuthPasswordInput('120786');
-                    }}
+                    onClick={() => setAuthLoginInput('med01')}
                     className={`px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer ${
+                      authLoginInput.toLowerCase().includes('med') ||
                       authLoginInput.toLowerCase().includes('cherif') ||
-                      authLoginInput.toLowerCase().includes('mohamed') ||
-                      authLoginInput.toLowerCase().includes('med01')
+                      authLoginInput.toLowerCase().includes('mohamed')
                         ? 'border-[#0B6E8C] bg-[#EEF5F9] text-[#0F2537]'
                         : 'border-slate-200 text-slate-600'
                     }`}
                   >
-                    Mohamed (Med01 / 120786)
+                    {mohamedDisplayName}
                   </button>
                 </div>
                 <input
                   type="text"
                   required
+                  autoComplete="username"
                   value={authLoginInput}
                   onChange={(e) => setAuthLoginInput(e.target.value)}
-                  placeholder="Marwen03 ou Med01"
+                  placeholder="Identifiant formateur (Marwen05 ou med01)"
                   className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl"
                 />
               </div>
@@ -1115,11 +1134,16 @@ export function TeacherPortal({
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-0.5">
               {teacherId === 'marwan'
-                ? 'ADMIN TEACHER PORTAL · RMARWAN26@ALEKHAASCHOOLS.COM'
-                : 'ADMIN TEACHER PORTAL · M.CHERIF@ALMAJD-ACADEMY.SA'}
+                ? 'ADMIN TEACHER PORTAL · MARWEN05'
+                : 'ADMIN TEACHER PORTAL · MED01'}
+              {loggedInTeacherId && (
+                <span className="ms-2 text-[#0B6E8C]">
+                  · Connecté : {loggedInTeacherId === 'marwan' ? marwanDisplayName : mohamedDisplayName}
+                </span>
+              )}
             </p>
             <h1 className="font-display text-3xl font-bold text-[#0F2537] tracking-tight">
-              {activeTrainerObj?.name || (teacherId === 'marwan' ? 'MR. Mhamdi' : 'M. Mohamed Cherif')}
+              {activeTrainerObj?.name || (teacherId === 'marwan' ? marwanDisplayName : mohamedDisplayName)}
             </h1>
           </div>
         </div>
@@ -1136,7 +1160,7 @@ export function TeacherPortal({
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Mr. Marwan Mhamdi (EN)
+              {marwanDisplayName} (EN)
             </button>
             <button
               type="button"
@@ -1147,23 +1171,18 @@ export function TeacherPortal({
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              M. Mohamed Cherif (FR / AR)
+              {mohamedDisplayName} (FR / AR)
             </button>
           </div>
           <button
             type="button"
-            onClick={() => setShowCredentialModal(true)}
-            title="Modifier mes identifiants privés"
-            className="px-3 py-2 bg-white border border-slate-300 hover:border-[#0B6E8C] text-slate-700 hover:text-[#0B6E8C] rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-          >
-            <KeyRound className="w-3.5 h-3.5" />
-            <span>Changer Identifiants</span>
-          </button>
-          <button
-            type="button"
             onClick={() => {
               setTeacherToken(null);
+              setLoggedInTeacherId(null);
               setAuthPasswordInput('');
+              setCurrentPasswordInput('');
+              setNewPasswordInput('');
+              setConfirmNewPasswordInput('');
             }}
             title="Verrouiller / Déconnexion Formateur"
             className="px-3 py-2 bg-white border border-slate-300 hover:border-red-400 text-slate-700 hover:text-red-700 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
@@ -2955,28 +2974,151 @@ export function TeacherPortal({
 
       {/* TAB: TEACHER PROFILE, PHOTO, EXPERIENCES & SKILLS EDITOR */}
       {activeTab === 'profile-admin' && (
-        <form
-          onSubmit={handleSaveTrainerProfile}
-          className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-7 shadow-xs space-y-6"
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
-            <div>
-              <h2 className="font-display text-xl font-bold text-[#0F2537]">
-                Profil Formateur, Photo, Expériences &amp; Compétences
-              </h2>
-              <p className="text-xs text-slate-600 mt-1">
-                Toutes ces informations sont immédiatement visibles dans l’espace élève pour présenter votre parcours et attirer les inscriptions.
-              </p>
+        <div className="space-y-6">
+          {/* Self-Service Account Security & Name Card (Strictly for Logged-In Teacher) */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-7 shadow-xs space-y-5">
+            <div className="border-b border-slate-200 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h2 className="font-display text-xl font-bold text-[#0F2537] flex items-center gap-2">
+                  <KeyRound className="w-5 h-5 text-[#0B6E8C]" />
+                  <span>Mon Compte Formateur — Nom &amp; Mot de Passe</span>
+                </h2>
+                <p className="text-xs text-slate-600 mt-1">
+                  Compte connecté :{' '}
+                  <strong className="text-[#0F2537]">
+                    {loggedInTeacherId === 'mohamed' ? mohamedDisplayName : marwanDisplayName}
+                  </strong>{' '}
+                  (identifiant{' '}
+                  <span className="font-mono font-semibold">
+                    {loggedInTeacherId === 'mohamed' ? 'med01' : 'Marwen05'}
+                  </span>
+                  ). Vos mots de passe sont chiffrés et invisibles pour tout le monde.
+                </p>
+              </div>
             </div>
-            <button
-              type="submit"
-              disabled={savingProfile}
-              className="px-5 py-2.5 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2 cursor-pointer disabled:opacity-50"
-            >
-              <Save className="w-4 h-4" />
-              <span>{savingProfile ? 'Enregistrement...' : 'Enregistrer & Publier côté élève'}</span>
-            </button>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <form
+                onSubmit={handleUpdateOwnName}
+                className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-3"
+              >
+                <div className="text-xs font-semibold text-[#0F2537]">
+                  Modifier mon nom affiché
+                </div>
+                <input
+                  type="text"
+                  required
+                  maxLength={100}
+                  value={accountNameInput}
+                  onChange={(e) => setAccountNameInput(e.target.value)}
+                  placeholder="Votre nom complet affiché"
+                  className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-xl bg-white"
+                />
+                <button
+                  type="submit"
+                  disabled={savingAccountName || !accountNameInput.trim()}
+                  className="px-4 py-2 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{savingAccountName ? 'Enregistrement...' : 'Enregistrer mon nom'}</span>
+                </button>
+              </form>
+
+              <form
+                onSubmit={handleUpdateOwnPassword}
+                className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-3"
+              >
+                <div className="text-xs font-semibold text-[#0F2537]">
+                  Changer mon mot de passe privé
+                </div>
+                {passwordChangeError && (
+                  <div className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-xs text-red-900">
+                    {passwordChangeError}
+                  </div>
+                )}
+                <input
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  value={currentPasswordInput}
+                  onChange={(e) => setCurrentPasswordInput(e.target.value)}
+                  placeholder="Mot de passe actuel"
+                  className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-xl bg-white"
+                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    autoComplete="new-password"
+                    value={newPasswordInput}
+                    onChange={(e) => setNewPasswordInput(e.target.value)}
+                    placeholder="Nouveau mot de passe (min. 6)"
+                    className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-xl bg-white"
+                  />
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    autoComplete="new-password"
+                    value={confirmNewPasswordInput}
+                    onChange={(e) => setConfirmNewPasswordInput(e.target.value)}
+                    placeholder="Confirmer le nouveau"
+                    className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-xl bg-white"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={savingPassword}
+                  className="px-4 py-2 bg-[#0F2537] hover:bg-slate-800 text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>{savingPassword ? 'Mise à jour...' : 'Mettre à jour mon mot de passe'}</span>
+                </button>
+              </form>
+            </div>
           </div>
+
+          <form
+            onSubmit={handleSaveTrainerProfile}
+            className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-7 shadow-xs space-y-6"
+          >
+            {!isEditingOwnProfile && loggedInTeacherId && (
+              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-950 flex flex-wrap items-center justify-between gap-3">
+                <span>
+                  Consultation seule : vous êtes connecté en tant que{' '}
+                  <strong>
+                    {loggedInTeacherId === 'mohamed' ? mohamedDisplayName : marwanDisplayName}
+                  </strong>
+                  . Vous ne pouvez modifier que votre propre profil.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setTeacherId(loggedInTeacherId)}
+                  className="px-3 py-1.5 bg-white border border-amber-300 rounded-lg font-semibold text-amber-900 cursor-pointer"
+                >
+                  Revenir à mon profil
+                </button>
+              </div>
+            )}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+              <div>
+                <h2 className="font-display text-xl font-bold text-[#0F2537]">
+                  Profil Formateur, Photo, Expériences &amp; Compétences
+                </h2>
+                <p className="text-xs text-slate-600 mt-1">
+                  Toutes ces informations sont immédiatement visibles dans l’espace élève pour présenter votre parcours et attirer les inscriptions.
+                </p>
+              </div>
+              <button
+                type="submit"
+                disabled={savingProfile || !isEditingOwnProfile}
+                className="px-5 py-2.5 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                <Save className="w-4 h-4" />
+                <span>{savingProfile ? 'Enregistrement...' : 'Enregistrer & Publier côté élève'}</span>
+              </button>
+            </div>
 
           {/* Photo + Identity */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -3215,7 +3357,7 @@ export function TeacherPortal({
               </div>
               <div className="pt-1">
                 <div className="text-[11px] text-slate-500 mb-1.5">
-                  Suggestions rapides pour {teacherId === 'marwan' ? 'Marwan Mhamdi' : 'Mohamed Cherif'} :
+                  Suggestions rapides pour {teacherId === 'marwan' ? marwanDisplayName : mohamedDisplayName} :
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {CURATED_SKILLS_BY_TEACHER[teacherId]
@@ -3320,6 +3462,7 @@ export function TeacherPortal({
             </div>
           </div>
         </form>
+        </div>
       )}
 
       {/* EMBEDDED PREP & STANDARDS TABS (Standards, STEP, GAT, NAFES, IELTS, Phonics, Skill Builder) */}
@@ -3335,95 +3478,6 @@ export function TeacherPortal({
 
       {loading && (
         <div className="text-xs text-slate-500 text-center py-2">Synchronizing portal data...</div>
-      )}
-
-      {showCredentialModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <div>
-                <h3 className="font-display text-lg font-bold text-[#0F2537]">Modifier vos identifiants privés</h3>
-                <p className="text-xs text-slate-500">Formateur actif : {teacherId === 'marwan' ? 'Marwen Mhamdi' : 'Mohamed Cherif'}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowCredentialModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-sm font-bold cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            {credentialMessage && (
-              <div className={`p-3 rounded-xl text-xs ${credentialMessage.type === 'success' ? 'bg-emerald-50 text-emerald-900 border border-emerald-200' : 'bg-red-50 text-red-900 border border-red-200'}`}>
-                {credentialMessage.text}
-              </div>
-            )}
-
-            <form onSubmit={handleUpdateCredentials} className="space-y-3.5">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Nouveau Login (Optionnel)</label>
-                <input
-                  type="text"
-                  value={newLoginInput}
-                  onChange={(e) => setNewLoginInput(e.target.value)}
-                  placeholder={teacherId === 'marwan' ? 'Marwen03' : 'Med01'}
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Mot de passe actuel</label>
-                <input
-                  type="password"
-                  value={currentPasswordInput}
-                  onChange={(e) => setCurrentPasswordInput(e.target.value)}
-                  placeholder="Confirmez votre mot de passe actuel"
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Nouveau mot de passe (min. 6 caractères)</label>
-                <input
-                  type="password"
-                  value={newPasswordInput}
-                  onChange={(e) => setNewPasswordInput(e.target.value)}
-                  placeholder="Laisser vide pour conserver l'actuel"
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Confirmer le nouveau mot de passe</label>
-                <input
-                  type="password"
-                  value={confirmNewPasswordInput}
-                  onChange={(e) => setConfirmNewPasswordInput(e.target.value)}
-                  placeholder="Répétez le nouveau mot de passe"
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowCredentialModal(false)}
-                  className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 cursor-pointer"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="submit"
-                  disabled={credentialSubmitting}
-                  className="px-4 py-2 bg-[#0B6E8C] hover:bg-[#08566E] text-white rounded-xl text-xs font-semibold cursor-pointer"
-                >
-                  {credentialSubmitting ? 'Enregistrement...' : 'Enregistrer'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
       )}
     </section>
   );

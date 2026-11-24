@@ -72,24 +72,14 @@ export function PastPapersVault({
       onUserUpdated(res.user);
       await onRefreshPapers();
       setCheckoutTarget(null);
-
-      const titleStr = checkoutTarget.isAllAccess ? 'Pass Illimité Tous Accès Past Papers' : checkoutTarget.paper?.title;
-      const priceStr = checkoutTarget.isAllAccess ? '290 SAR' : `${checkoutTarget.paper?.priceSar} SAR`;
-      const whatsappText = `Bonjour Admin (Al-Majd Academy),
-Je souhaite valider mon paiement pour le téléchargement de past papers : ${titleStr} (${priceStr}).
-Référence de commande : ${res.order.referenceCode}
-Voici mon reçu / confirmation de virement :`;
-      const whatsappUrl = `https://wa.me/966594228783?text=${encodeURIComponent(whatsappText)}`;
-      window.open(whatsappUrl, '_blank');
-
       setFeedback({
         type: 'success',
         message:
           lang === 'ar'
-            ? `تم إرسال طلب الدفع عبر واتساب (المرجع: ${res.order.referenceCode}). يرجى إرسال إيصال الدفع للإدارة.`
+            ? `تم تأكيد الدفع بنجاح (${res.order.referenceCode}). يمكنك الآن تحميل الاختبار مع الحل النموذجي.`
             : lang === 'en'
-              ? `Order submitted (${res.order.referenceCode}). WhatsApp opened to send payment receipt to admin.`
-              : `Commande enregistrée (${res.order.referenceCode}). WhatsApp s'est ouvert pour envoyer votre reçu de paiement à l'admin.`,
+              ? `Payment verified (${res.order.referenceCode}). Your Past Paper & Mark Scheme are now unlocked for download.`
+              : `Paiement confirmé (${res.order.referenceCode}). Vous pouvez télécharger le sujet complet et sa correction officielle.`,
       });
     } catch (err: any) {
       setFeedback({ type: 'error', message: err.message || 'Échec du paiement' });

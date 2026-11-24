@@ -487,7 +487,29 @@ export interface TeacherCredentialRecord {
   salt: string;
 }
 
-const memoryTeacherCredentials = new Map<'marwan' | 'mohamed', TeacherCredentialRecord>();
+const DEFAULT_TEACHER_CREDENTIALS: TeacherCredentialRecord[] = [
+  {
+    teacherId: 'marwan',
+    loginAliases: ['marwen05', 'rmarwan26@alekhaaschools.com', 'marwan', 'marwan mhamdi'],
+    salt: 'ec352b0565bda62ba0dbf08749ca5997',
+    passwordHash:
+      'ffb92b4d2b06486ecb11c3e0ed8297f3225eaa8e75392c218de3a6581f60d47ca9fd7975129d6e7bf4f856e49d0474577155720c7d92dfbe4ba0551e538aa57e',
+  },
+  {
+    teacherId: 'mohamed',
+    loginAliases: ['med01', 'm.cherif@almajd-academy.sa', 'cherifmed2030@gmail.com', 'mohamed', 'mohamed cherif'],
+    salt: '3bdbf1fdf3f8a484756d95313c602ce5',
+    passwordHash:
+      '8c51c659d008bfdfd9a86571bd5deba8e2c4c21436eb1e5d3576c736cd19bd96cc779bf23a65790c36bd3407803d0af2151cbd8b796135b07fd7d9c6c5879493',
+  },
+];
+
+const memoryTeacherCredentials = new Map<'marwan' | 'mohamed', TeacherCredentialRecord>(
+  DEFAULT_TEACHER_CREDENTIALS.map((cred) => [
+    cred.teacherId,
+    { ...cred, loginAliases: [...cred.loginAliases] },
+  ])
+);
 
 // Cached connection for Vercel serverless cold-starts
 let connectionPromise: Promise<boolean> | null = null;
@@ -1780,14 +1802,21 @@ export const db = {
   async hasAnyTeacherCredentials(): Promise<boolean> {
     if (await connectDatabase()) {
       const count = await TeacherCredentialModel.countDocuments();
-      return count > 0;
+      if (count === 0) {
+        await TeacherCredentialModel.insertMany(DEFAULT_TEACHER_CREDENTIALS);
+      }
+      return true;
     }
     return memoryTeacherCredentials.size > 0;
   },
 
   async getTeacherCredentials(): Promise<TeacherCredentialRecord[]> {
     if (await connectDatabase()) {
-      const docs = await TeacherCredentialModel.find({}).lean();
+      let docs = await TeacherCredentialModel.find({}).lean();
+      if (docs.length === 0) {
+        await TeacherCredentialModel.insertMany(DEFAULT_TEACHER_CREDENTIALS);
+        docs = await TeacherCredentialModel.find({}).lean();
+      }
       return docs.map((d: any) => ({
         teacherId: d.teacherId,
         loginAliases: Array.isArray(d.loginAliases) ? d.loginAliases : [],
@@ -1796,6 +1825,35 @@ export const db = {
       }));
     }
     return Array.from(memoryTeacherCredentials.values());
+  },
+
+  async findTeacherCredentialById(
+    teacherId: 'marwan' | 'mohamed'
+  ): Promise<TeacherCredentialRecord | null> {
+    const creds = await this.getTeacherCredentials();
+    return creds.find((c) => c.teacherId === teacherId) || null;
+  },
+
+  async updateTeacherPassword(
+    teacherId: 'marwan' | 'mohamed',
+    passwordHash: string,
+    salt: string
+  ): Promise<boolean> {
+    if (await connectDatabase()) {
+      await this.getTeacherCredentials();
+      const updated = await TeacherCredentialModel.findOneAndUpdate(
+        { teacherId },
+        { $set: { passwordHash, salt } },
+        { new: true }
+      ).lean();
+      return Boolean(updated);
+    }
+    const existing = memoryTeacherCredentials.get(teacherId);
+    if (!existing) return false;
+    existing.passwordHash = passwordHash;
+    existing.salt = salt;
+    memoryTeacherCredentials.set(teacherId, existing);
+    return true;
   },
 
   async saveTeacherCredential(cred: TeacherCredentialRecord): Promise<void> {
