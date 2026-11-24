@@ -15,11 +15,13 @@ import {
 import { COURSE_MODULES } from '../data/curriculumData';
 import { TRANSLATIONS } from '../i18n/translations';
 import { apiRequest } from '../utils/api';
+import { ExamPrepHubs } from './ExamPrepHubs';
 import type {
   CourseLesson,
   CourseModule,
   CurriculumKey,
   PaidCourseItem,
+  PrepHubTab,
   ProgressState,
   UiLanguage,
   UserProfile,
@@ -31,6 +33,8 @@ interface CourseWorkspaceProps {
   onSelectTrack: (track: CurriculumKey) => void;
   initialCourseId?: string | null;
   highlightPaidCourseId?: string | null;
+  initialSubMode?: 'courses' | 'hubs';
+  initialHubTab?: PrepHubTab;
   progress: ProgressState;
   paidCourses: PaidCourseItem[];
   user: UserProfile | null;
@@ -40,6 +44,7 @@ interface CourseWorkspaceProps {
   onRefreshPaidCourses: () => Promise<void>;
   onMarkLessonComplete: (lessonId: string, quizScore?: number) => Promise<void>;
   onNavigateToTutors: (trainerName: string) => void;
+  onLaunchAiExam?: (curriculum: string) => void;
 }
 
 function downloadStudySheet(course: CourseModule, lesson: CourseLesson) {
@@ -89,6 +94,8 @@ export function CourseWorkspace({
   onSelectTrack,
   initialCourseId,
   highlightPaidCourseId,
+  initialSubMode = 'courses',
+  initialHubTab = 'standards',
   progress,
   paidCourses,
   user,
@@ -98,8 +105,11 @@ export function CourseWorkspace({
   onRefreshPaidCourses,
   onMarkLessonComplete,
   onNavigateToTutors,
+  onLaunchAiExam,
 }: CourseWorkspaceProps) {
   const t = TRANSLATIONS[lang];
+  const [subMode, setSubMode] = useState<'courses' | 'hubs'>(initialSubMode);
+  const [hubTab, setHubTab] = useState<PrepHubTab>(initialHubTab);
   const [activeCourseId, setActiveCourseId] = useState<string>(initialCourseId || COURSE_MODULES[0].id);
   const [activeLessonIndex, setActiveLessonIndex] = useState<number>(0);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
@@ -112,7 +122,16 @@ export function CourseWorkspace({
   const [enrollMessage, setEnrollMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
+    setSubMode(initialSubMode);
+  }, [initialSubMode]);
+
+  useEffect(() => {
+    setHubTab(initialHubTab);
+  }, [initialHubTab]);
+
+  useEffect(() => {
     if (initialCourseId) {
+      setSubMode('courses');
       setActiveCourseId(initialCourseId);
       setActiveLessonIndex(0);
       setSelectedOption(null);
@@ -122,6 +141,7 @@ export function CourseWorkspace({
 
   useEffect(() => {
     if (highlightPaidCourseId) {
+      setSubMode('courses');
       const target = paidCourses.find((c) => c.id === highlightPaidCourseId);
       if (target && !target.isEnrolled) {
         setCheckoutCourse(target);
@@ -214,32 +234,73 @@ export function CourseWorkspace({
   };
 
   return (
-    <section id="courses-section" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 space-y-16">
-      {/* Free & Structured Curriculum Courses */}
-      <div>
-        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-8">
-          <div className="max-w-2xl">
-            <p className="text-xs font-semibold tracking-wide text-emerald-700 mb-2">
-              {t.heroKicker}
-            </p>
-            <h2 className="font-display text-3xl sm:text-4xl font-semibold text-slate-900 text-balance">
-              {t.coursesHeading}
-            </h2>
-            <p className="mt-3 text-base text-slate-600 leading-relaxed">{t.coursesSubheading}</p>
-          </div>
-
-          <div className="text-sm text-slate-600 tabular-nums shrink-0">
-            <span>
-              {filteredCourses.length}{' '}
-              {lang === 'ar' ? 'وحدات متاحة' : lang === 'en' ? 'modules available' : 'modules disponibles'}
-            </span>
-            <span className="mx-2 text-slate-300">·</span>
-            <span>
-              {progress.completedLessonIds.length}{' '}
-              {lang === 'ar' ? 'دروس مكتملة' : lang === 'en' ? 'lessons completed' : 'leçons validées'}
-            </span>
-          </div>
+    <section id="courses-section" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-10">
+      {/* Mode Switcher: Structured Courses vs Practical Exam Prep Hubs */}
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
+        <div className="max-w-2xl">
+          <p className="text-xs font-semibold tracking-wide text-[#0B6E8C] mb-2">
+            {t.heroKicker}
+          </p>
+          <h2 className="font-display text-3xl sm:text-4xl font-bold text-[#0F2537] text-balance">
+            {t.coursesHeading}
+          </h2>
+          <p className="mt-2.5 text-base text-slate-600 leading-relaxed">{t.coursesSubheading}</p>
         </div>
+
+        <div className="inline-flex items-center gap-1 p-1 bg-white border border-slate-200 rounded-xl shadow-xs self-start lg:self-auto">
+          <button
+            type="button"
+            onClick={() => setSubMode('courses')}
+            className={`px-4 py-2 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              subMode === 'courses'
+                ? 'bg-[#0B6E8C] text-white'
+                : 'text-slate-600 hover:text-[#0F2537]'
+            }`}
+          >
+            {lang === 'ar'
+              ? 'الدروس والدورات المدفوعة'
+              : lang === 'en'
+                ? 'Curriculum & Paid Courses'
+                : 'Cours & Programmes Payants'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setSubMode('hubs')}
+            className={`px-4 py-2 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              subMode === 'hubs'
+                ? 'bg-[#0B6E8C] text-white'
+                : 'text-slate-600 hover:text-[#0F2537]'
+            }`}
+          >
+            {t.navPrepHubs}
+          </button>
+        </div>
+      </div>
+
+      {subMode === 'hubs' ? (
+        <ExamPrepHubs
+          lang={lang}
+          activeTab={hubTab}
+          onSelectTab={setHubTab}
+          defaultStudentName={user?.name || ''}
+          onLaunchAiExam={onLaunchAiExam}
+        />
+      ) : (
+        <div className="space-y-14">
+          <div>
+            <div className="flex items-center justify-between gap-4 mb-5">
+              <div className="text-sm text-slate-600 tabular-nums">
+                <span>
+                  {filteredCourses.length}{' '}
+                  {lang === 'ar' ? 'وحدات متاحة' : lang === 'en' ? 'modules available' : 'modules disponibles'}
+                </span>
+                <span className="mx-2 text-slate-300">·</span>
+                <span>
+                  {progress.completedLessonIds.length}{' '}
+                  {lang === 'ar' ? 'دروس مكتملة' : lang === 'en' ? 'lessons completed' : 'leçons validées'}
+                </span>
+              </div>
+            </div>
 
         {/* Segmented Interactive Curriculum Filter Bar */}
         <div className="overflow-x-auto pb-2 mb-8">
@@ -643,7 +704,7 @@ export function CourseWorkspace({
             <div
               key={pc.id}
               dir={pc.language === 'العربية' ? 'rtl' : 'ltr'}
-              className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col justify-between shadow-xs hover:border-amber-400 transition-colors"
+              className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col justify-between shadow-xs hover:border-[#0B6E8C] transition-colors"
             >
               <div>
                 <div className="text-xs font-medium text-amber-800 mb-2">
@@ -651,7 +712,7 @@ export function CourseWorkspace({
                   <span className="mx-1.5 text-slate-300">·</span>
                   <span className="text-slate-600">{pc.language}</span>
                 </div>
-                <h4 className="font-display text-lg font-semibold text-slate-900 leading-snug mb-3">
+                <h4 className="font-display text-lg font-semibold text-[#0F2537] leading-snug mb-3">
                   {pc.title}
                 </h4>
                 <div className="text-xs text-slate-600 mb-4 tabular-nums">
@@ -664,7 +725,7 @@ export function CourseWorkspace({
                 <ul className="space-y-2 mb-6">
                   {pc.syllabusHighlights.map((hl, i) => (
                     <li key={i} className="text-xs text-slate-700 leading-relaxed flex items-start gap-2">
-                      <span className="font-mono text-emerald-700 font-semibold">•</span>
+                      <span className="font-mono text-[#0B6E8C] font-semibold">•</span>
                       <span>{hl}</span>
                     </li>
                   ))}
@@ -672,7 +733,7 @@ export function CourseWorkspace({
               </div>
 
               <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-3">
-                <span className="font-mono text-lg font-semibold text-slate-900 tabular-nums">
+                <span className="font-mono text-lg font-semibold text-[#0F2537] tabular-nums">
                   {pc.priceSar} SAR
                 </span>
 
@@ -691,7 +752,7 @@ export function CourseWorkspace({
                       }
                       setCheckoutCourse(pc);
                     }}
-                    className="px-4 py-2 bg-slate-900 hover:bg-emerald-800 text-white text-xs font-semibold rounded-lg inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                    className="px-4 py-2 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 transition-colors cursor-pointer"
                   >
                     <CreditCard className="w-3.5 h-3.5" />
                     <span>
@@ -708,6 +769,8 @@ export function CourseWorkspace({
           ))}
         </div>
       </div>
+        </div>
+      )}
 
       {/* Paid Course Checkout Modal */}
       {checkoutCourse && (

@@ -56,12 +56,15 @@ export const TRANSLATIONS: Record<
     portalTitle: string;
     portalSubtitle: string;
     signOut: string;
+    modeStudent: string;
+    modeTeacher: string;
+    navPrepHubs: string;
   }
 > = {
   fr: {
     brand: 'Al-Majd Academy',
     navPlacement: 'Test de Niveau',
-    navCourses: 'Cours',
+    navCourses: 'Cours & Hubs',
     navAiExams: 'Examens IA',
     navPastPapers: 'Past Papers',
     navTutors: 'Formateurs',
@@ -71,7 +74,7 @@ export const TRANSLATIONS: Record<
     heroKicker: 'Écoles Internationales & Programmes Nationaux · Arabie Saoudite',
     heroTitle: 'Maîtrisez les examens internationaux avec rigueur et méthode',
     heroSubtitle:
-      'Cours complets alignés sur les règles officielles (American SAT/AP, IB Diploma, IGCSE, Nafes, Qudurat, Bac Français), générateur d’épreuves par IA Gemini, Past Papers corrigés et tutorat en direct avec Marwan Mhamdi et Mohamed Cherif.',
+      'Plateforme académique complète : Test de niveau par classe, cours ciblés, hubs pratiques (STEP, GAT, NAFES, IELTS, Phonics, Skill Builder), générateur IA Gemini, Past Papers corrigés et suivi formateur.',
     heroPrimaryCta: 'Explorer les Cours',
     heroSecondaryCta: 'Générer un Examen IA',
     benchmarkTracks: '6 Systèmes d’Examens',
@@ -82,12 +85,12 @@ export const TRANSLATIONS: Record<
     filterAmerican: 'American (SAT / AP)',
     filterIb: 'IB Diploma',
     filterBritish: 'IGCSE & A-Level',
-    filterNafes: 'Nafes (ETEC)',
+    filterNafes: 'NAFES (ETEC)',
     filterQiyas: 'Qudurat & Tahsili',
     filterFrench: 'Bac Français (AEFE)',
-    coursesHeading: 'Bibliothèque de Cours & Règles Officielles',
+    coursesHeading: 'Bibliothèque de Cours, Règles & Hubs d’Entraînement',
     coursesSubheading:
-      'Chaque module détaille les exigences des jurys internationaux, des exemples rédigés pas à pas, des fiches de révision et un quiz de validation.',
+      'Alternez entre cours détaillés, cours intensifs payants et hubs de pratique rapide (STEP, GAT, NAFES, IELTS, Phonics, Skill Builder & Rédaction).',
     openCourse: 'Ouvrir le module',
     examRulesTitle: 'Règlement Officiel de l’Épreuve',
     workedExampleTitle: 'Exemple Rédigé & Barème',
@@ -98,7 +101,7 @@ export const TRANSLATIONS: Record<
     lessonCompleted: 'Leçon validée',
     aiStudioTitle: 'Studio de Génération d’Examens par IA Gemini',
     aiStudioSubtitle:
-      'Créez instantanément des sujets conformes aux barèmes officiels SAT, IB, IGCSE, Nafes, Qudurat, Tahsili ou Bac Français en français, anglais ou arabe.',
+      'Créez instantanément des sujets conformes aux barèmes officiels SAT, IB, IGCSE, NAFES, Qudurat, Tahsili, STEP, IELTS ou Bac Français.',
     generateExamBtn: 'Générer l’Examen Officiel',
     generatingExamBtn: 'Rédaction par Gemini en cours...',
     pastPapersTitle: 'Coffre Past Papers & Corrections Officielles',
@@ -106,7 +109,7 @@ export const TRANSLATIONS: Record<
       'Consultez gratuitement la Question 1 et le règlement officiel, puis débloquez le sujet complet avec son corrigé détaillé (Mark Scheme) prêt à imprimer.',
     allAccessBannerTitle: 'Pass Semestre Tous Examens & Corrections',
     allAccessBannerDesc:
-      'Accès illimité au téléchargement de tous les Past Papers et leurs barèmes officiels (SAT, IB, IGCSE, Nafes, Qudurat, Bac).',
+      'Accès illimité au téléchargement de tous les Past Papers et leurs barèmes officiels (SAT, IB, IGCSE, NAFES, Qudurat, Bac).',
     unlockAllAccessBtn: 'Débloquer le Pass',
     previewQ1: 'Aperçu Q1',
     unlockPaperBtn: 'Débloquer & Télécharger',
@@ -119,11 +122,14 @@ export const TRANSLATIONS: Record<
     portalSubtitle:
       'Retrouvez votre progression dans les cours, vos Past Papers débloqués, vos réservations de tutorat et vos examens IA enregistrés.',
     signOut: 'Déconnexion',
+    modeStudent: 'Espace Élève & Parents',
+    modeTeacher: 'Portail Formateur',
+    navPrepHubs: 'Hubs Prep & Compétences',
   },
   en: {
     brand: 'Al-Majd Academy',
     navPlacement: 'Placement Test',
-    navCourses: 'Courses',
+    navCourses: 'Courses & Hubs',
     navAiExams: 'AI Exams',
     navPastPapers: 'Past Papers',
     navTutors: 'Tutors',
@@ -133,7 +139,7 @@ export const TRANSLATIONS: Record<
     heroKicker: 'International Schools & National Assessments · Saudi Arabia',
     heroTitle: 'Master international exams under official board rules',
     heroSubtitle:
-      'Comprehensive lessons aligned with Digital SAT/AP, IB Diploma, Cambridge IGCSE, NAFES, Qudurat, and French Baccalauréat, powered by Gemini AI exam generation, paid Past Papers with mark schemes, and live coaching with Marwan Mhamdi and Mohamed Cherif.',
+      'Academic command platform: grade-level placement test, structured courses, interactive prep hubs (STEP, GAT, NAFES, IELTS, Phonics, Skill Builder), Gemini AI exams, paid Past Papers, and teacher coaching.',
     heroPrimaryCta: 'Explore Courses',
     heroSecondaryCta: 'Generate AI Exam',
     benchmarkTracks: '6 Exam Systems',
@@ -144,12 +150,12 @@ export const TRANSLATIONS: Record<
     filterAmerican: 'American (SAT / AP)',
     filterIb: 'IB Diploma',
     filterBritish: 'IGCSE & A-Level',
-    filterNafes: 'Nafes (ETEC)',
+    filterNafes: 'NAFES (ETEC)',
     filterQiyas: 'Qudurat & Tahsili',
     filterFrench: 'French Bac (AEFE)',
-    coursesHeading: 'Curriculum Library & Official Exam Rules',
+    coursesHeading: 'Curriculum Library, Rules & Prep Hubs',
     coursesSubheading:
-      'Every module provides official examination regulations, step-by-step worked solutions, downloadable summary sheets, and interactive checkpoints.',
+      'Switch smoothly between full lessons, paid intensive courses, and focused practice hubs (STEP, GAT, NAFES, IELTS, Phonics, Skill Builder & Writing).',
     openCourse: 'Open Module',
     examRulesTitle: 'Official Examination Rules',
     workedExampleTitle: 'Worked Example & Mark Allocation',
@@ -160,7 +166,7 @@ export const TRANSLATIONS: Record<
     lessonCompleted: 'Completed',
     aiStudioTitle: 'Gemini AI International Exam Studio',
     aiStudioSubtitle:
-      'Generate custom timed exam papers aligned with SAT, IB, IGCSE, Nafes, Qudurat, Tahsili, or French Bac standards in English, French, or Arabic.',
+      'Generate custom timed exam papers aligned with SAT, IB, IGCSE, NAFES, Qudurat, Tahsili, STEP, IELTS, or French Bac standards.',
     generateExamBtn: 'Generate Official Exam',
     generatingExamBtn: 'Drafting with Gemini...',
     pastPapersTitle: 'Past Papers & Official Mark Schemes Vault',
@@ -168,7 +174,7 @@ export const TRANSLATIONS: Record<
       'Inspect Question 1 and board rules for free, then unlock the full exam paper and step-by-step official correction for instant download.',
     allAccessBannerTitle: 'Full Semester All-Access Pass',
     allAccessBannerDesc:
-      'Unlock unlimited downloads of all Past Papers and official Mark Schemes across SAT, IB, IGCSE, Nafes, Qudurat, and French Bac.',
+      'Unlock unlimited downloads of all Past Papers and official Mark Schemes across SAT, IB, IGCSE, NAFES, Qudurat, and French Bac.',
     unlockAllAccessBtn: 'Unlock Full Pass',
     previewQ1: 'Preview Q1',
     unlockPaperBtn: 'Unlock & Download',
@@ -181,11 +187,14 @@ export const TRANSLATIONS: Record<
     portalSubtitle:
       'Access your completed lessons, unlocked Past Papers, scheduled tutoring sessions, and saved Gemini AI exams.',
     signOut: 'Sign Out',
+    modeStudent: 'Student & Parent Space',
+    modeTeacher: 'Teacher Portal',
+    navPrepHubs: 'Prep Hubs & Skills',
   },
   ar: {
     brand: 'أكاديمية المجد',
     navPlacement: 'اختبار المستوى',
-    navCourses: 'الدروس',
+    navCourses: 'الدروس والتدريب',
     navAiExams: 'اختبارات الذكاء',
     navPastPapers: 'الاختبارات السابقة',
     navTutors: 'المدربون',
@@ -195,7 +204,7 @@ export const TRANSLATIONS: Record<
     heroKicker: 'المدارس العالمية والاختبارات الوطنية · المملكة العربية السعودية',
     heroTitle: 'أتقن الاختبارات الدولية والوطنية وفق الأنظمة المعتمدة',
     heroSubtitle:
-      'دروس شاملة ومفصلة لأنظمة SAT/AP، البكالوريا الدولية IB، كامبريدج IGCSE، اختبار نافس، القدرات والتحصيلي، والبكالوريا الفرنسية، مع مولد اختبارات ذكي عبر Gemini، وبنك اختبارات سابقة محلولة، ومدربين مباشرين.',
+      'منصة أكاديمية متكاملة: اختبار تحديد المستوى حسب الصف، دروس مخصصة ومدفوعة، مسارات STEP وGAT ونافس وIELTS والصوتيات وبناء المهارات، مولد اختبارات Gemini، وبوابة المعلم.',
     heroPrimaryCta: 'استعراض الدروس',
     heroSecondaryCta: 'توليد اختبار بالذكاء',
     benchmarkTracks: '6 أنظمة تعليمية',
@@ -209,9 +218,9 @@ export const TRANSLATIONS: Record<
     filterNafes: 'اختبار نافس (ETEC)',
     filterQiyas: 'القدرات والتحصيلي',
     filterFrench: 'البكالوريا الفرنسية',
-    coursesHeading: 'مكتبة الدروس والضوابط الرسمية للاختبارات',
+    coursesHeading: 'مكتبة الدروس ومراكز التدريب العملي',
     coursesSubheading:
-      'كل وحدة تعليمية تتضمن قواعد اللجنة الممتحنة، أمثلة محلولة بالخطوات، ملخصات قابلة للتحميل، واختباراً تفاعلياً قصيراً.',
+      'انتقل بسهولة بين الدروس المنهجية والدورات المدفوعة ومراكز التدريب السريع (STEP، القدرات، نافس، IELTS، الصوتيات، بناء المهارات والكتابة).',
     openCourse: 'فتح الوحدة',
     examRulesTitle: 'الضوابط الرسمية للاختبار',
     workedExampleTitle: 'مثال تطبيقي مع توزيع الدرجات',
@@ -222,7 +231,7 @@ export const TRANSLATIONS: Record<
     lessonCompleted: 'مكتمل',
     aiStudioTitle: 'استوديو توليد الاختبارات عبر Gemini',
     aiStudioSubtitle:
-      'أنشئ اختبارات محاكية للأنظمة الدولية والوطنية (SAT، IB، IGCSE، نافس، القدرات، التحصيلي) باللغات العربية والفرنسية والإنجليزية.',
+      'أنشئ اختبارات محاكية للأنظمة الدولية والوطنية (SAT، IB، IGCSE، نافس، القدرات، STEP، IELTS) باللغات العربية والفرنسية والإنجليزية.',
     generateExamBtn: 'توليد الاختبار الآن',
     generatingExamBtn: 'جارٍ إعداد الاختبار...',
     pastPapersTitle: 'خزانة الاختبارات السابقة والحلول النموذجية',
@@ -243,5 +252,8 @@ export const TRANSLATIONS: Record<
     portalSubtitle:
       'تابع تقدمك في الدروس، الاختبارات السابقة المشتراة، حجوزات المدربين، والاختبارات المولدة بالذكاء الاصطناعي.',
     signOut: 'تسجيل الخروج',
+    modeStudent: 'بوابة الطالب وولي الأمر',
+    modeTeacher: 'بوابة المعلم والمدرب',
+    navPrepHubs: 'مسارات التدريب والمهارات',
   },
 };

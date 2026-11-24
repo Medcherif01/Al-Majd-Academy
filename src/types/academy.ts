@@ -1,6 +1,41 @@
 export type UiLanguage = 'fr' | 'en' | 'ar';
 
-export type ActiveView = 'placement' | 'courses' | 'ai-exams' | 'past-papers' | 'tutors' | 'portal';
+export type WorkspaceMode = 'student' | 'teacher';
+
+export type ActiveView =
+  | 'placement'
+  | 'courses'
+  | 'prep-hubs'
+  | 'ai-exams'
+  | 'past-papers'
+  | 'tutors'
+  | 'portal';
+
+export type PrepHubTab =
+  | 'standards'
+  | 'step'
+  | 'gat'
+  | 'nafes'
+  | 'ielts'
+  | 'phonics'
+  | 'skill-builder'
+  | 'writing-practice';
+
+export type TeacherSubTab =
+  | 'dashboard'
+  | 'weekly-mission'
+  | 'students-codes'
+  | 'assign-skills'
+  | 'progress'
+  | 'standards'
+  | 'step'
+  | 'gat'
+  | 'nafes'
+  | 'ielts'
+  | 'phonics'
+  | 'skill-builder'
+  | 'writing-review'
+  | 'weekly-reports';
 
 export type CurriculumKey =
   | 'all'
@@ -10,6 +45,52 @@ export type CurriculumKey =
   | 'nafes'
   | 'qiyas'
   | 'french';
+
+export interface RosterStudent {
+  id: string;
+  teacherId: 'marwan' | 'mohamed';
+  name: string;
+  grade: string;
+  className: string;
+  program: 'Boost' | 'Stretch';
+  skillsMastered: number;
+  skillsTotal: number;
+  assignedSkills: string[];
+  studentCode: string;
+  parentCode: string;
+  status: 'Active' | 'Waiting to join';
+  weeklyMission: string;
+  createdAt: string;
+}
+
+export interface WeeklyMission {
+  id: string;
+  teacherId: 'marwan' | 'mohamed';
+  grade: string;
+  className: string;
+  title: string;
+  targetExam: string;
+  skills: string[];
+  dueDate: string;
+  program: 'Boost' | 'Stretch' | 'All';
+  createdAt: string;
+}
+
+export interface WritingSubmission {
+  id: string;
+  teacherId: 'marwan' | 'mohamed';
+  studentName: string;
+  grade: string;
+  track: string;
+  prompt: string;
+  content: string;
+  wordCount: number;
+  status: 'pending' | 'reviewed';
+  score: number | null;
+  teacherFeedback: string;
+  reviewedBy: string;
+  createdAt: string;
+}
 
 export interface UserProfile {
   id: string;

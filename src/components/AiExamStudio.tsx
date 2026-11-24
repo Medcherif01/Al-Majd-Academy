@@ -8,6 +8,7 @@ interface AiExamStudioProps {
   lang: UiLanguage;
   token: string | null;
   initialExam?: GeneratedExam | null;
+  initialCurriculum?: string | null;
   onExamSaved?: (exam: GeneratedExam) => void;
 }
 
@@ -21,10 +22,18 @@ const CURRICULUM_SUBJECTS: Record<string, string[]> = {
   'Baccalauréat Français (AEFE)': ['Mathématiques Spécialité', 'Physique-Chimie Spécialité', 'SVT Spécialité', 'Français (Première)'],
 };
 
-export function AiExamStudio({ lang, token, initialExam, onExamSaved }: AiExamStudioProps) {
+export function AiExamStudio({
+  lang,
+  token,
+  initialExam,
+  initialCurriculum,
+  onExamSaved,
+}: AiExamStudioProps) {
   const t = TRANSLATIONS[lang];
-  const [curriculum, setCurriculum] = useState<string>('IB Diploma (DP)');
-  const [subject, setSubject] = useState<string>(CURRICULUM_SUBJECTS['IB Diploma (DP)'][0]);
+  const [curriculum, setCurriculum] = useState<string>(initialCurriculum || 'IB Diploma (DP)');
+  const [subject, setSubject] = useState<string>(
+    (CURRICULUM_SUBJECTS[initialCurriculum || 'IB Diploma (DP)'] || ['Mathematics'])[0]
+  );
   const [examLanguage, setExamLanguage] = useState<'Français' | 'English' | 'العربية'>('English');
   const [difficulty, setDifficulty] = useState<'Standard' | 'Avancé / HL' | 'Intensif Examen'>('Avancé / HL');
   const [topic, setTopic] = useState<string>('');
@@ -38,6 +47,20 @@ export function AiExamStudio({ lang, token, initialExam, onExamSaved }: AiExamSt
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [submitted, setSubmitted] = useState(false);
   const [secondsElapsed, setSecondsElapsed] = useState(0);
+
+  useEffect(() => {
+    if (initialCurriculum && CURRICULUM_SUBJECTS[initialCurriculum]) {
+      setCurriculum(initialCurriculum);
+      setSubject(CURRICULUM_SUBJECTS[initialCurriculum][0]);
+      if (initialCurriculum.includes('NAFES') || initialCurriculum.includes('Qudurat')) {
+        setExamLanguage('العربية');
+      } else if (initialCurriculum.includes('Baccalauréat')) {
+        setExamLanguage('Français');
+      } else {
+        setExamLanguage('English');
+      }
+    }
+  }, [initialCurriculum]);
 
   useEffect(() => {
     if (initialExam) {
@@ -252,7 +275,7 @@ export function AiExamStudio({ lang, token, initialExam, onExamSaved }: AiExamSt
           <button
             type="submit"
             disabled={generating}
-            className="w-full py-3 px-4 bg-slate-900 hover:bg-emerald-900 text-white text-sm font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
+            className="w-full py-3 px-4 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-sm font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
           >
             <Sparkles className="w-4 h-4" />
             <span>{generating ? t.generatingExamBtn : t.generateExamBtn}</span>

@@ -141,7 +141,7 @@ export function PlacementTestView({
       {/* Header Banner */}
       <div className="mb-8 flex flex-col lg:flex-row lg:items-end justify-between gap-6">
         <div className="max-w-2xl">
-          <p className="text-xs font-semibold tracking-wide text-blue-700 mb-2 flex items-center gap-1.5">
+          <p className="text-xs font-semibold tracking-wide text-[#0B6E8C] mb-2 flex items-center gap-1.5">
             <Compass className="w-4 h-4" />
             <span>
               {lang === 'ar'
@@ -151,7 +151,7 @@ export function PlacementTestView({
                   : 'Étape 01 · Test de Niveau & Bilan Personnalisé'}
             </span>
           </p>
-          <h2 className="font-display text-3xl sm:text-4xl font-semibold text-slate-900 text-balance">
+          <h2 className="font-display text-3xl sm:text-4xl font-bold text-[#0F2537] text-balance">
             {lang === 'ar'
               ? 'ابدأ باختبار تحديد المستوى المناسب لصفك الدراسي'
               : lang === 'en'
@@ -174,7 +174,7 @@ export function PlacementTestView({
               setStep('setup');
               setError('');
             }}
-            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-800 bg-white border border-slate-300 hover:border-slate-900 rounded-lg transition-colors self-start cursor-pointer"
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-[#0F2537] bg-white border border-slate-300 hover:border-[#0B6E8C] rounded-xl transition-colors self-start cursor-pointer"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span>
@@ -197,12 +197,12 @@ export function PlacementTestView({
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
             onSubmit={handleStartTest}
-            className="bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-8 shadow-sm space-y-8"
+            className="bg-white border border-[#DCE4ED] rounded-2xl p-6 sm:p-8 shadow-xs space-y-8"
           >
             {/* 1. Grade / Class Selection */}
             <div>
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 mb-3">
-                <GraduationCap className="w-4 h-4 text-emerald-700" />
+              <div className="flex items-center gap-2 text-sm font-semibold text-[#0F2537] mb-3">
+                <GraduationCap className="w-4 h-4 text-[#0B6E8C]" />
                 <span>
                   {lang === 'ar'
                     ? '1. اختر الصف الدراسي المناسب لك'
@@ -224,8 +224,8 @@ export function PlacementTestView({
                       onClick={() => setSelectedGrade(g.id)}
                       className={`text-start p-4 rounded-xl border transition-all cursor-pointer ${
                         active
-                          ? 'bg-emerald-950 text-white border-emerald-950 shadow-sm'
-                          : 'bg-slate-50/70 border-slate-200 text-slate-800 hover:border-emerald-700/60 hover:bg-white'
+                          ? 'bg-[#0F2537] text-white border-[#0F2537] shadow-xs'
+                          : 'bg-[#F8FAFC] border-[#DCE4ED] text-[#0F2537] hover:border-[#0B6E8C] hover:bg-white'
                       }`}
                     >
                       <div className="text-xs font-mono opacity-75 mb-1">
@@ -241,7 +241,7 @@ export function PlacementTestView({
             {/* 2. Curriculum & Language */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-6 border-t border-slate-200">
               <div className="lg:col-span-8">
-                <label className="block text-sm font-semibold text-slate-900 mb-3">
+                <label className="block text-sm font-semibold text-[#0F2537] mb-3">
                   {lang === 'ar'
                     ? '2. النظام الدراسي / الاختبار المستهدف'
                     : lang === 'en'
@@ -256,10 +256,10 @@ export function PlacementTestView({
                         key={curr.id}
                         type="button"
                         onClick={() => handleCurriculumSelect(curr.id)}
-                        className={`text-start px-3.5 py-2.5 rounded-lg border text-xs font-semibold transition-colors cursor-pointer ${
+                        className={`text-start px-3.5 py-2.5 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
                           active
-                            ? 'bg-blue-700 text-white border-blue-700'
-                            : 'bg-white border-slate-200 text-slate-700 hover:border-slate-400'
+                            ? 'bg-[#0B6E8C] text-white border-[#0B6E8C]'
+                            : 'bg-white border-slate-200 text-slate-700 hover:border-[#0B6E8C]'
                         }`}
                       >
                         {curr.label}
@@ -311,7 +311,7 @@ export function PlacementTestView({
               <button
                 type="submit"
                 disabled={loading}
-                className="px-6 py-3 bg-emerald-800 hover:bg-emerald-900 text-white text-sm font-semibold rounded-xl transition-colors inline-flex items-center gap-2 cursor-pointer"
+                className="px-6 py-3 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-sm font-semibold rounded-xl transition-colors inline-flex items-center gap-2 cursor-pointer"
               >
                 <span>
                   {loading

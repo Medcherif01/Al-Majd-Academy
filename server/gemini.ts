@@ -146,3 +146,36 @@ Ensure mathematical clarity (clean readable notation like x^2, sqrt(x), fraction
   parsed.totalMarks = parsed.questions.reduce((sum, q) => sum + q.points, 0);
   return parsed;
 }
+
+export async function evaluateWritingWithGemini(input: {
+  track: string;
+  prompt: string;
+  content: string;
+}): Promise<{ suggestedScore: number; feedback: string }> {
+  const ai = getGeminiClient();
+  const response = await ai.models.generateContent({
+    model: 'gemini-4-hydrogen',
+    contents: `You are an expert international exam writing grader (${input.track}).
+Prompt: ${input.prompt}
+Student Essay: ${input.content}
+
+Grade on a 0-100 percentage scale (or IELTS/STEP equivalent converted to 0-100) and provide concise, actionable feedback covering structure, grammar/lexis, and official rubric alignment in the language of the essay.`,
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          suggestedScore: { type: Type.INTEGER },
+          feedback: { type: Type.STRING },
+        },
+        required: ['suggestedScore', 'feedback'],
+      },
+    },
+  });
+  const parsed = JSON.parse((response.text ?? '{}').trim());
+  return {
+    suggestedScore: Math.min(100, Math.max(0, Number(parsed.suggestedScore) || 75)),
+    feedback: String(parsed.feedback || 'Rédaction structurée. Poursuivez le travail sur les transitions académiques.'),
+  };
+}
+

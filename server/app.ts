@@ -26,7 +26,7 @@ import {
   GRADE_LEVEL_OPTIONS,
   PAID_COURSES_CATALOG,
 } from './placement.ts';
-import { generateInternationalExam } from './gemini.ts';
+import { generateInternationalExam, evaluateWritingWithGemini } from './gemini.ts';
 
 function isNonEmptyString(val: unknown, maxLen = 300): val is string {
   return typeof val === 'string' && val.trim().length > 0 && val.trim().length <= maxLen;
@@ -664,6 +664,218 @@ export function createApiApp() {
       });
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Erreur lors de l’inscription au cours.' });
+    }
+  });
+
+  // --- Invitation Code Redemption (Student / Parent) ---
+  app.post('/api/auth/redeem-code', async (req, res) => {
+    try {
+      const { code } = req.body ?? {};
+      if (!isNonEmptyString(code, 32)) {
+        res.status(400).json({ error: 'Code d’invitation requis (ex. PATH-... ou FAM-...).' });
+        return;
+      }
+      const student = await db.redeemInvitationCode(code);
+      if (!student) {
+        res.status(404).json({ error: 'Code d’invitation introuvable. Vérifiez auprès de votre formateur.' });
+        return;
+      }
+      res.json({ student });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de l’activation du code.' });
+    }
+  });
+
+  // --- Teacher Portal Routes (Marwan Mhamdi & Mohamed Cherif) ---
+  app.get('/api/teacher/overview', async (req, res) => {
+    try {
+      const teacherParam = req.query.teacherId;
+      const teacherId =
+        teacherParam === 'mohamed' ? 'mohamed' : teacherParam === 'marwan' ? 'marwan' : undefined;
+      const [students, missions, writings] = await Promise.all([
+        db.getRosterStudents(teacherId),
+        db.getWeeklyMissions(teacherId),
+        db.getWritingSubmissions(teacherId),
+      ]);
+      res.json({
+        students,
+        missions,
+        writings,
+        pendingWritingCount: writings.filter((w) => w.status === 'pending').length,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors du chargement du portail formateur.' });
+    }
+  });
+
+  app.post('/api/teacher/students', async (req, res) => {
+    try {
+      const { teacherId, namesText, grade, className, program } = req.body ?? {};
+      const validTeacher: 'marwan' | 'mohamed' = teacherId === 'mohamed' ? 'mohamed' : 'marwan';
+      if (!isNonEmptyString(namesText, 2000)) {
+        res.status(400).json({ error: 'Saisissez au moins un nom d’élève (un par ligne).' });
+        return;
+      }
+      const names = namesText
+        .split(/\r?\n/)
+        .map((n) => n.trim())
+        .filter((n) => n.length >= 2)
+        .slice(0, 40);
+      if (names.length === 0) {
+        res.status(400).json({ error: 'Aucun nom valide détecté.' });
+        return;
+      }
+
+      const validGrade = isNonEmptyString(grade, 40) ? grade.trim() : 'Grade 11';
+      const validClass = isNonEmptyString(className, 20) ? className.trim() : 'B';
+      const validProgram: 'Boost' | 'Stretch' = program === 'Stretch' ? 'Stretch' : 'Boost';
+
+      const makeCode = (prefix: string) =>
+        `${prefix}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+
+      const payload = names.map((name) => ({
+        teacherId: validTeacher,
+        name,
+        grade: validGrade,
+        className: validClass,
+        program: validProgram,
+        skillsMastered: 0,
+        skillsTotal: 9,
+        assignedSkills:
+          validTeacher === 'marwan'
+            ? ['STEP Grammar Core', 'GAT Quantitative Ratios', 'Digital SAT Linear Modeling']
+            : ['NAFES Compétences Clés', 'Qudurat Analogies', 'Méthodologie AEFE'],
+        studentCode: makeCode('PATH'),
+        parentCode: makeCode('FAM'),
+        status: 'Waiting to join' as const,
+        weeklyMission:
+          validProgram === 'Stretch'
+            ? 'Stretch High Achievers · Timed Exam Drills'
+            : 'Boost Remedial · Core Foundations',
+      }));
+
+      const created = await db.createRosterStudents(payload);
+      res.status(201).json({ created });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Impossible de générer les codes élèves.' });
+    }
+  });
+
+  app.post('/api/teacher/assign-skills', async (req, res) => {
+    try {
+      const { teacherId, grade, program, skills } = req.body ?? {};
+      const validTeacher: 'marwan' | 'mohamed' = teacherId === 'mohamed' ? 'mohamed' : 'marwan';
+      const validGrade = isNonEmptyString(grade, 40) ? grade.trim() : 'All';
+      const validProg: 'Boost' | 'Stretch' | 'All' =
+        program === 'Boost' || program === 'Stretch' ? program : 'All';
+      if (!Array.isArray(skills) || skills.length === 0) {
+        res.status(400).json({ error: 'Sélectionnez au moins une compétence à assigner.' });
+        return;
+      }
+      const cleanSkills = skills.filter((s) => isNonEmptyString(s, 120)).map((s) => s.trim());
+      const students = await db.assignSkillsToRoster(validTeacher, validGrade, validProg, cleanSkills);
+      res.json({ students });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de l’assignation des compétences.' });
+    }
+  });
+
+  app.post('/api/teacher/missions', async (req, res) => {
+    try {
+      const { teacherId, grade, className, title, targetExam, skills, dueDate, program } = req.body ?? {};
+      const validTeacher: 'marwan' | 'mohamed' = teacherId === 'mohamed' ? 'mohamed' : 'marwan';
+      if (!isNonEmptyString(title, 160) || !isNonEmptyString(targetExam, 80)) {
+        res.status(400).json({ error: 'Titre de mission et examen cible requis.' });
+        return;
+      }
+      const mission = await db.createWeeklyMission({
+        teacherId: validTeacher,
+        grade: isNonEmptyString(grade, 40) ? grade.trim() : 'Grade 11',
+        className: isNonEmptyString(className, 20) ? className.trim() : 'All',
+        title: title.trim(),
+        targetExam: targetExam.trim(),
+        skills: Array.isArray(skills) ? skills.filter((s) => isNonEmptyString(s, 120)) : [],
+        dueDate: isNonEmptyString(dueDate, 30) ? dueDate.trim() : '2026-12-05',
+        program: program === 'Boost' || program === 'Stretch' ? program : 'All',
+      });
+      res.status(201).json({ mission });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de la création de la mission.' });
+    }
+  });
+
+  app.post('/api/teacher/writing/submit', async (req, res) => {
+    try {
+      const { teacherId, studentName, grade, track, prompt, content } = req.body ?? {};
+      if (!isNonEmptyString(studentName, 100) || !isNonEmptyString(content, 5000)) {
+        res.status(400).json({ error: 'Nom de l’élève et texte de rédaction requis.' });
+        return;
+      }
+      const wordCount = content.trim().split(/\s+/).length;
+      const submission = await db.createWritingSubmission({
+        teacherId: teacherId === 'mohamed' ? 'mohamed' : 'marwan',
+        studentName: studentName.trim(),
+        grade: isNonEmptyString(grade, 40) ? grade.trim() : 'Grade 11',
+        track: isNonEmptyString(track, 60) ? track.trim() : 'IELTS Task 2',
+        prompt: isNonEmptyString(prompt, 400) ? prompt.trim() : 'Academic Essay Practice',
+        content: content.trim(),
+        wordCount,
+        status: 'pending',
+        score: null,
+        teacherFeedback: '',
+        reviewedBy: '',
+      });
+      res.status(201).json({ submission });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de la soumission.' });
+    }
+  });
+
+  app.post('/api/teacher/writing/:id/review', async (req, res) => {
+    try {
+      const { score, teacherFeedback, reviewedBy } = req.body ?? {};
+      const numScore = Math.min(100, Math.max(0, Number(score) || 0));
+      if (!isNonEmptyString(teacherFeedback, 2000)) {
+        res.status(400).json({ error: 'Commentaire de correction requis.' });
+        return;
+      }
+      const updated = await db.reviewWritingSubmission(
+        req.params.id,
+        numScore,
+        teacherFeedback.trim(),
+        isNonEmptyString(reviewedBy, 80) ? reviewedBy.trim() : 'Formateur'
+      );
+      if (!updated) {
+        res.status(404).json({ error: 'Copie introuvable.' });
+        return;
+      }
+      res.json({ submission: updated });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de la correction.' });
+    }
+  });
+
+  app.post('/api/teacher/writing/:id/ai-draft', async (req, res) => {
+    try {
+      const all = await db.getWritingSubmissions();
+      const target = all.find((w) => w.id === req.params.id);
+      if (!target) {
+        res.status(404).json({ error: 'Copie introuvable.' });
+        return;
+      }
+      const draft = await evaluateWritingWithGemini({
+        track: target.track,
+        prompt: target.prompt,
+        content: target.content,
+      });
+      res.json(draft);
+    } catch (err: any) {
+      const msg = err?.message || '';
+      if (msg === 'GEMINI_API_KEY_MISSING') {
+        res.status(503).json({ error: 'Clé Gemini non configurée pour l’aide à la correction.' });
+        return;
+      }
+      res.status(500).json({ error: msg || 'Erreur Gemini' });
     }
   });
 
