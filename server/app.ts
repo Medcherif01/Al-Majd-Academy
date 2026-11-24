@@ -20,6 +20,12 @@ import {
   TRAINERS,
   type PastPaperItem,
 } from './catalog.ts';
+import {
+  buildPlacementQuestions,
+  evaluatePlacementTest,
+  GRADE_LEVEL_OPTIONS,
+  PAID_COURSES_CATALOG,
+} from './placement.ts';
 import { generateInternationalExam } from './gemini.ts';
 
 function isNonEmptyString(val: unknown, maxLen = 300): val is string {
@@ -150,6 +156,7 @@ export function createApiApp() {
         passwordHash: hash,
         salt,
         unlockedPapers: [],
+        enrolledCourses: [],
         hasAllAccessPass: false,
       });
 
@@ -196,6 +203,7 @@ export function createApiApp() {
           passwordHash: hash,
           salt,
           unlockedPapers: [],
+          enrolledCourses: [],
           hasAllAccessPass: false,
         });
       }
@@ -524,6 +532,139 @@ export function createApiApp() {
 
     const progress = await db.updateProgress(req.user!.id, validLessonId, validQuiz);
     res.json({ progress });
+  });
+
+  // --- Placement Test & Diagnostic Summary ---
+  app.get('/api/placement/options', (_req, res) => {
+    res.json({
+      grades: GRADE_LEVEL_OPTIONS,
+      paidCourses: PAID_COURSES_CATALOG,
+    });
+  });
+
+  app.post('/api/placement/start', (req, res) => {
+    const { gradeLevel, curriculum, language } = req.body ?? {};
+    const validGrade = isNonEmptyString(gradeLevel, 40) ? gradeLevel.trim() : 'grade-10';
+    const validCurriculum = isNonEmptyString(curriculum, 80) ? curriculum.trim() : 'IB Diploma';
+    const validLang: 'Français' | 'English' | 'العربية' =
+      language === 'English' || language === 'العربية' ? language : 'Français';
+
+    const testPackage = buildPlacementQuestions(validGrade, validCurriculum, validLang);
+    // Strip correctIndex & internal labels before sending test to client? Or send questions without correctIndex!
+    const safeQuestions = testPackage.questions.map(({ id, domain, prompt, options }) => ({
+      id,
+      domain,
+      prompt,
+      options,
+    }));
+
+    res.json({
+      gradeLevel: testPackage.gradeLevel,
+      gradeLabel: testPackage.gradeLabel,
+      curriculum: testPackage.curriculum,
+      language: testPackage.language,
+      questions: safeQuestions,
+    });
+  });
+
+  app.post('/api/placement/evaluate', optionalAuth, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { gradeLevel, curriculum, language, answers } = req.body ?? {};
+      const validGrade = isNonEmptyString(gradeLevel, 40) ? gradeLevel.trim() : 'grade-10';
+      const validCurriculum = isNonEmptyString(curriculum, 80) ? curriculum.trim() : 'IB Diploma';
+      const validLang: 'Français' | 'English' | 'العربية' =
+        language === 'English' || language === 'العربية' ? language : 'Français';
+
+      const normalizedAnswers: Record<string, number> = {};
+      if (answers && typeof answers === 'object') {
+        for (const [k, v] of Object.entries(answers)) {
+          if (typeof v === 'number' && Number.isInteger(v)) {
+            normalizedAnswers[k] = v;
+          }
+        }
+      }
+
+      const evaluation = await evaluatePlacementTest({
+        gradeLevel: validGrade,
+        curriculum: validCurriculum,
+        language: validLang,
+        answers: normalizedAnswers,
+      });
+
+      if (req.user) {
+        const saved = await db.savePlacementResult({
+          userId: req.user.id,
+          ...evaluation,
+        });
+        res.json({ result: saved });
+        return;
+      }
+
+      res.json({
+        result: {
+          id: crypto.randomUUID(),
+          userId: 'guest',
+          createdAt: new Date().toISOString(),
+          ...evaluation,
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de l’analyse du test de niveau.' });
+    }
+  });
+
+  app.get('/api/placement/latest', requireAuth, async (req: AuthenticatedRequest, res) => {
+    const result = await db.getLatestPlacementByUser(req.user!.id);
+    res.json({ result });
+  });
+
+  // --- Paid Specialized Courses Catalog & Enrollment ---
+  app.get('/api/paid-courses', optionalAuth, (req: AuthenticatedRequest, res) => {
+    const enrolledSet = new Set(req.user?.enrolledCourses || []);
+    res.json({
+      paidCourses: PAID_COURSES_CATALOG.map((c) => ({
+        ...c,
+        isEnrolled: enrolledSet.has(c.id),
+      })),
+    });
+  });
+
+  app.post('/api/paid-courses/enroll', requireAuth, async (req: AuthenticatedRequest, res) => {
+    try {
+      const user = req.user!;
+      const { courseId, paymentMethod } = req.body ?? {};
+      const course = PAID_COURSES_CATALOG.find((c) => c.id === courseId);
+      if (!course) {
+        res.status(404).json({ error: 'Cours payant introuvable.' });
+        return;
+      }
+      if (user.enrolledCourses?.includes(course.id)) {
+        res.status(400).json({ error: 'Vous êtes déjà inscrit à ce cours intensif.' });
+        return;
+      }
+
+      const method = isNonEmptyString(paymentMethod, 40) ? paymentMethod.trim() : 'Mada / Visa';
+      const refCode = `CRS-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+
+      const order = await db.createOrder({
+        userId: user.id,
+        customerEmail: user.email,
+        items: [{ paperId: course.id, title: course.title, priceSar: course.priceSar }],
+        isAllAccessPass: false,
+        totalSar: course.priceSar,
+        paymentMethod: method,
+        referenceCode: refCode,
+        status: 'paid',
+      });
+
+      const updatedUser = await db.enrollCourse(user.id, course.id);
+      res.status(201).json({
+        order,
+        user: updatedUser ? sanitizeUser(updatedUser) : sanitizeUser(user),
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Erreur lors de l’inscription au cours.' });
+    }
   });
 
   return app;

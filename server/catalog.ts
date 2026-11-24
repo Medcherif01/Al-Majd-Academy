@@ -10,7 +10,7 @@ export interface PastPaperItem {
   id: string;
   code: string;
   title: string;
-  curriculum: 'American (SAT/AP)' | 'IB Diploma' | 'IGCSE & A-Level' | 'Nafes (ETEC)' | 'Qudurat & Tahsili' | 'Bac Français';
+  curriculum: 'American (SAT/AP)' | 'IB Diploma' | 'IGCSE & A-Level' | 'NAFES (ETEC)' | 'Qudurat & Tahsili' | 'Bac Français';
   subject: string;
   year: number;
   session: string;
@@ -171,8 +171,8 @@ export const PAST_PAPERS_CATALOG: PastPaperItem[] = [
   {
     id: 'nafes-grade9-math-2025',
     code: 'ETEC-NAFES-G9-2025',
-    title: 'اختبار نافس الوطني (NAFIS) — الرياضيات والعلوم الصف الثالث متوسط + الحل النموذجي',
-    curriculum: 'Nafes (ETEC)',
+    title: 'اختبار نافس الوطني (NAFES) — الرياضيات والعلوم الصف الثالث متوسط + الحل النموذجي',
+    curriculum: 'NAFES (ETEC)',
     subject: 'الرياضيات والعلوم',
     year: 2025,
     session: 'الدورة الوطنية - هيئة تقويم التعليم',
@@ -339,7 +339,7 @@ export const TRAINERS: TrainerProfile[] = [
     name: 'Mohamed Cherif',
     roleTitle: 'Formateur Principal — Cursus Français & Arabe',
     languages: ['Français', 'العربية'],
-    curricula: ['Baccalauréat Français (AEFE)', 'Brevet (DNB)', 'IB French B', 'NAFIS / نافس (ETEC)', 'Qudurat (القدرات العامة)', 'Tahsili (التحصيلي)'],
+    curricula: ['Baccalauréat Français (AEFE)', 'Brevet (DNB)', 'IB French B', 'NAFES / نافس (ETEC)', 'Qudurat (القدرات العامة)', 'Tahsili (التحصيلي)'],
     hourlyRateSar: 180,
     packRateSar: 800,
     credentials: 'Agrégation & Master Pédagogie · Expert AEFE, ETEC Nafes & Qiyas (Qudurat / Tahsili)',

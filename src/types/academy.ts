@@ -1,6 +1,6 @@
 export type UiLanguage = 'fr' | 'en' | 'ar';
 
-export type ActiveView = 'courses' | 'ai-exams' | 'past-papers' | 'tutors' | 'portal';
+export type ActiveView = 'placement' | 'courses' | 'ai-exams' | 'past-papers' | 'tutors' | 'portal';
 
 export type CurriculumKey =
   | 'all'
@@ -18,7 +18,60 @@ export interface UserProfile {
   role: 'student' | 'parent';
   preferredTrack: string;
   unlockedPapers: string[];
+  enrolledCourses: string[];
   hasAllAccessPass: boolean;
+}
+
+export interface GradeOption {
+  id: string;
+  labelFr: string;
+  labelEn: string;
+  labelAr: string;
+}
+
+export interface PlacementQuestionItem {
+  id: string;
+  domain: string;
+  prompt: string;
+  options: string[];
+}
+
+export interface PlacementResult {
+  id: string;
+  gradeLevel: string;
+  curriculum: string;
+  language: 'Français' | 'English' | 'العربية';
+  overallScore: number;
+  levelLabel: string;
+  domainBreakdown: {
+    domain: string;
+    scorePct: number;
+    status: 'strong' | 'moderate' | 'weak';
+  }[];
+  strengths: string[];
+  weaknesses: string[];
+  missingGaps: string[];
+  summaryText: string;
+  recommendedCourseIds: string[];
+  recommendedPaidCourseId: string;
+  recommendedTrainerId: 'marwan' | 'mohamed';
+  createdAt: string;
+}
+
+export interface PaidCourseItem {
+  id: string;
+  title: string;
+  curriculumKey: Exclude<CurriculumKey, 'all'>;
+  curriculumLabel: string;
+  gradeBands: string[];
+  language: 'English' | 'Français' | 'العربية';
+  trainerId: 'marwan' | 'mohamed';
+  trainerName: string;
+  durationWeeks: number;
+  sessionsCount: number;
+  priceSar: number;
+  syllabusHighlights: string[];
+  isEnrolled?: boolean;
 }
 
 export interface LessonCheckpoint {
@@ -47,6 +100,7 @@ export interface CourseModule {
   id: string;
   curriculumKey: Exclude<CurriculumKey, 'all'>;
   curriculumLabel: string;
+  gradeBands: string[];
   subject: string;
   level: string;
   language: 'English' | 'Français' | 'العربية';

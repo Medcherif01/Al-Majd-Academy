@@ -10,7 +10,31 @@ export interface UserRecord {
   passwordHash: string;
   salt: string;
   unlockedPapers: string[];
+  enrolledCourses: string[];
   hasAllAccessPass: boolean;
+  createdAt: string;
+}
+
+export interface PlacementResultRecord {
+  id: string;
+  userId: string;
+  gradeLevel: string;
+  curriculum: string;
+  language: 'Français' | 'English' | 'العربية';
+  overallScore: number;
+  levelLabel: string;
+  domainBreakdown: {
+    domain: string;
+    scorePct: number;
+    status: 'strong' | 'moderate' | 'weak';
+  }[];
+  strengths: string[];
+  weaknesses: string[];
+  missingGaps: string[];
+  summaryText: string;
+  recommendedCourseIds: string[];
+  recommendedPaidCourseId: string;
+  recommendedTrainerId: 'marwan' | 'mohamed';
   createdAt: string;
 }
 
@@ -90,6 +114,7 @@ const UserSchema = new Schema(
     passwordHash: { type: String, required: true },
     salt: { type: String, required: true },
     unlockedPapers: { type: [String], default: [] },
+    enrolledCourses: { type: [String], default: [] },
     hasAllAccessPass: { type: Boolean, default: false },
   },
   { timestamps: true }
@@ -172,12 +197,34 @@ const ProgressSchema = new Schema(
   { timestamps: true }
 );
 
+const PlacementResultSchema = new Schema(
+  {
+    userId: { type: String, required: true, index: true },
+    gradeLevel: { type: String, required: true },
+    curriculum: { type: String, required: true },
+    language: { type: String, required: true },
+    overallScore: { type: Number, required: true },
+    levelLabel: { type: String, required: true },
+    domainBreakdown: { type: [Schema.Types.Mixed], default: [] },
+    strengths: { type: [String], default: [] },
+    weaknesses: { type: [String], default: [] },
+    missingGaps: { type: [String], default: [] },
+    summaryText: { type: String, required: true },
+    recommendedCourseIds: { type: [String], default: [] },
+    recommendedPaidCourseId: { type: String, default: '' },
+    recommendedTrainerId: { type: String, enum: ['marwan', 'mohamed'], default: 'marwan' },
+  },
+  { timestamps: true }
+);
+
 const UserModel: Model<any> = mongoose.models.User || mongoose.model('User', UserSchema);
 const BookingModel: Model<any> = mongoose.models.Booking || mongoose.model('Booking', BookingSchema);
 const OrderModel: Model<any> = mongoose.models.Order || mongoose.model('Order', OrderSchema);
 const GeneratedExamModel: Model<any> =
   mongoose.models.GeneratedExam || mongoose.model('GeneratedExam', GeneratedExamSchema);
 const ProgressModel: Model<any> = mongoose.models.Progress || mongoose.model('Progress', ProgressSchema);
+const PlacementResultModel: Model<any> =
+  mongoose.models.PlacementResult || mongoose.model('PlacementResult', PlacementResultSchema);
 
 // Cached connection for Vercel serverless cold-starts
 let connectionPromise: Promise<boolean> | null = null;
@@ -226,6 +273,7 @@ const memoryBookings: BookingRecord[] = [];
 const memoryOrders: OrderRecord[] = [];
 const memoryExams: GeneratedExamRecord[] = [];
 const memoryProgress = new Map<string, ProgressRecord>();
+const memoryPlacements: PlacementResultRecord[] = [];
 
 function mapUserDoc(doc: any): UserRecord {
   return {
@@ -237,6 +285,7 @@ function mapUserDoc(doc: any): UserRecord {
     passwordHash: doc.passwordHash,
     salt: doc.salt,
     unlockedPapers: Array.isArray(doc.unlockedPapers) ? doc.unlockedPapers : [],
+    enrolledCourses: Array.isArray(doc.enrolledCourses) ? doc.enrolledCourses : [],
     hasAllAccessPass: Boolean(doc.hasAllAccessPass),
     createdAt: doc.createdAt ? new Date(doc.createdAt).toISOString() : new Date().toISOString(),
   };
@@ -302,6 +351,68 @@ export const db = {
     if (allAccess) existing.hasAllAccessPass = true;
     memoryUsers.set(userId, existing);
     return existing;
+  },
+
+  async enrollCourse(userId: string, courseId: string): Promise<UserRecord | null> {
+    if (await connectDatabase()) {
+      const updated = await UserModel.findByIdAndUpdate(
+        userId,
+        { $addToSet: { enrolledCourses: courseId } },
+        { new: true }
+      ).lean();
+      return updated ? mapUserDoc(updated) : null;
+    }
+    const existing = memoryUsers.get(userId);
+    if (!existing) return null;
+    existing.enrolledCourses = Array.from(new Set([...existing.enrolledCourses, courseId]));
+    memoryUsers.set(userId, existing);
+    return existing;
+  },
+
+  async savePlacementResult(
+    result: Omit<PlacementResultRecord, 'id' | 'createdAt'>
+  ): Promise<PlacementResultRecord> {
+    if (await connectDatabase()) {
+      const doc = await PlacementResultModel.create(result);
+      return {
+        ...result,
+        id: String(doc._id),
+        createdAt: new Date(doc.createdAt).toISOString(),
+      };
+    }
+    const record: PlacementResultRecord = {
+      ...result,
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+    };
+    memoryPlacements.unshift(record);
+    return record;
+  },
+
+  async getLatestPlacementByUser(userId: string): Promise<PlacementResultRecord | null> {
+    if (await connectDatabase()) {
+      const doc: any = await PlacementResultModel.findOne({ userId }).sort({ createdAt: -1 }).lean();
+      if (!doc) return null;
+      return {
+        id: String(doc._id),
+        userId: doc.userId,
+        gradeLevel: doc.gradeLevel,
+        curriculum: doc.curriculum,
+        language: doc.language,
+        overallScore: doc.overallScore,
+        levelLabel: doc.levelLabel,
+        domainBreakdown: doc.domainBreakdown || [],
+        strengths: doc.strengths || [],
+        weaknesses: doc.weaknesses || [],
+        missingGaps: doc.missingGaps || [],
+        summaryText: doc.summaryText,
+        recommendedCourseIds: doc.recommendedCourseIds || [],
+        recommendedPaidCourseId: doc.recommendedPaidCourseId || '',
+        recommendedTrainerId: doc.recommendedTrainerId || 'marwan',
+        createdAt: new Date(doc.createdAt).toISOString(),
+      };
+    }
+    return memoryPlacements.find((p) => p.userId === userId) || null;
   },
 
   async createOrder(order: Omit<OrderRecord, 'id' | 'createdAt'>): Promise<OrderRecord> {

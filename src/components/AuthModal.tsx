@@ -193,7 +193,7 @@ export function AuthModal({ open, lang, onClose, onSuccess }: AuthModalProps) {
                   <option value="american">American (Digital SAT / AP)</option>
                   <option value="ib">IB Diploma (HL / SL)</option>
                   <option value="british">Cambridge IGCSE &amp; A-Level</option>
-                  <option value="nafes">NAFIS / نافس (ETEC)</option>
+                  <option value="nafes">NAFES / نافس (ETEC)</option>
                   <option value="qiyas">Qudurat &amp; Tahsili (قياس)</option>
                   <option value="french">Baccalauréat Français (AEFE)</option>
                 </select>

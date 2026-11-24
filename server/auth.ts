@@ -113,6 +113,7 @@ export function sanitizeUser(user: UserRecord) {
     role: user.role,
     preferredTrack: user.preferredTrack,
     unlockedPapers: user.unlockedPapers,
+    enrolledCourses: user.enrolledCourses || [],
     hasAllAccessPass: user.hasAllAccessPass,
   };
 }

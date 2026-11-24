@@ -16,7 +16,7 @@ const CURRICULUM_SUBJECTS: Record<string, string[]> = {
   'American AP': ['AP Calculus AB/BC', 'AP Physics 1', 'AP Chemistry', 'AP Biology'],
   'IB Diploma (DP)': ['Mathematics AA HL/SL', 'Physics HL/SL', 'Chemistry HL/SL', 'French B', 'Economics'],
   'Cambridge IGCSE / A-Level': ['IGCSE Mathematics (0580)', 'IGCSE Physics (0625)', 'IGCSE Chemistry (0620)', 'A-Level Mathematics (9709)'],
-  'NAFIS / نافس (ETEC)': ['الرياضيات (Math)', 'العلوم (Science)', 'القراءة (Reading)'],
+  'NAFES / نافس (ETEC)': ['الرياضيات (Math)', 'العلوم (Science)', 'القراءة (Reading)'],
   'Qudurat & Tahsili (قياس)': ['القدرات — القسم الكمي (Quantitative)', 'القدرات — القسم اللفظي (Verbal)', 'التحصيلي العلمي (Tahsili STEM)'],
   'Baccalauréat Français (AEFE)': ['Mathématiques Spécialité', 'Physique-Chimie Spécialité', 'SVT Spécialité', 'Français (Première)'],
 };
@@ -60,7 +60,7 @@ export function AiExamStudio({ lang, token, initialExam, onExamSaved }: AiExamSt
     setCurriculum(nextCurr);
     const list = CURRICULUM_SUBJECTS[nextCurr] || ['Mathematics'];
     setSubject(list[0]);
-    if (nextCurr.includes('NAFIS') || nextCurr.includes('Qudurat')) {
+    if (nextCurr.includes('NAFES') || nextCurr.includes('Qudurat')) {
       setExamLanguage('العربية');
     } else if (nextCurr.includes('Baccalauréat')) {
       setExamLanguage('Français');

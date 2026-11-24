@@ -4,6 +4,7 @@ export const TRANSLATIONS: Record<
   UiLanguage,
   {
     brand: string;
+    navPlacement: string;
     navCourses: string;
     navAiExams: string;
     navPastPapers: string;
@@ -59,6 +60,7 @@ export const TRANSLATIONS: Record<
 > = {
   fr: {
     brand: 'Al-Majd Academy',
+    navPlacement: 'Test de Niveau',
     navCourses: 'Cours',
     navAiExams: 'Examens IA',
     navPastPapers: 'Past Papers',
@@ -120,6 +122,7 @@ export const TRANSLATIONS: Record<
   },
   en: {
     brand: 'Al-Majd Academy',
+    navPlacement: 'Placement Test',
     navCourses: 'Courses',
     navAiExams: 'AI Exams',
     navPastPapers: 'Past Papers',
@@ -181,6 +184,7 @@ export const TRANSLATIONS: Record<
   },
   ar: {
     brand: 'أكاديمية المجد',
+    navPlacement: 'اختبار المستوى',
     navCourses: 'الدروس',
     navAiExams: 'اختبارات الذكاء',
     navPastPapers: 'الاختبارات السابقة',
