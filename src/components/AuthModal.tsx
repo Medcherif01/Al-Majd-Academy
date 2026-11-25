@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { KeyRound, ShieldCheck, X } from 'lucide-react';
 import { apiRequest } from '../utils/api';
+import { StudentPortalEmblem } from './BrandIcons';
 import type { RosterStudent, UiLanguage, UserProfile } from '../types/academy';
 
 interface AuthModalProps {
@@ -80,39 +81,42 @@ export function AuthModal({ open, lang, onClose, onSuccess }: AuthModalProps) {
       role="dialog"
       aria-modal="true"
     >
-      <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 sm:p-8 shadow-xl relative">
+      <div className="bg-white border border-[#DCE3F0] rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl relative">
         <button
           type="button"
           onClick={onClose}
           aria-label="Fermer"
-          className="absolute top-4 end-4 p-2 text-slate-500 hover:text-slate-900 rounded-lg cursor-pointer"
+          className="absolute top-4 end-4 p-2 text-slate-500 hover:text-[#0B1633] rounded-lg cursor-pointer"
         >
           <X className="w-5 h-5" />
         </button>
 
-        <div className="mb-5">
-          <p className="text-xs font-semibold text-[#0B6E8C] mb-1">
-            {lang === 'ar' ? 'بوابة الأكاديمية' : lang === 'en' ? 'Academy Account' : 'Compte Académique'}
-          </p>
-          <h2 className="font-display text-2xl font-bold text-[#0F2537]">
-            {mode === 'code'
-              ? lang === 'ar'
-                ? 'تفعيل رمز الدعوة'
-                : lang === 'en'
-                  ? 'Activate Invitation Code'
-                  : 'Activer un Code d’Invitation'
-              : mode === 'login'
+        <div className="mb-5 flex items-center gap-3.5">
+          <StudentPortalEmblem className="w-12 h-12 shrink-0" />
+          <div>
+            <p className="font-mono text-xs font-semibold text-[#1D4ED8] mb-0.5">
+              {lang === 'ar' ? 'بوابة الأكاديمية' : lang === 'en' ? 'Academy Account' : 'Compte Académique'}
+            </p>
+            <h2 className="font-display text-2xl font-extrabold text-[#0B1633] tracking-tight">
+              {mode === 'code'
                 ? lang === 'ar'
-                  ? 'تسجيل الدخول'
+                  ? 'تفعيل رمز الدعوة'
                   : lang === 'en'
-                    ? 'Sign in to your portal'
-                    : 'Accéder à votre espace'
-                : lang === 'ar'
-                  ? 'إنشاء حساب طالب أو ولي أمر'
-                  : lang === 'en'
-                    ? 'Create Student or Parent Account'
-                    : 'Créer un compte Élève ou Parent'}
-          </h2>
+                    ? 'Activate Invitation Code'
+                    : 'Activer un Code d’Invitation'
+                : mode === 'login'
+                  ? lang === 'ar'
+                    ? 'تسجيل الدخول'
+                    : lang === 'en'
+                      ? 'Sign in to your portal'
+                      : 'Accéder à votre espace'
+                  : lang === 'ar'
+                    ? 'إنشاء حساب طالب أو ولي أمر'
+                    : lang === 'en'
+                      ? 'Create Student or Parent Account'
+                      : 'Créer un compte Élève ou Parent'}
+            </h2>
+          </div>
         </div>
 
         <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-xl mb-5">
@@ -304,7 +308,7 @@ export function AuthModal({ open, lang, onClose, onSuccess }: AuthModalProps) {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-2.5 px-4 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-60 cursor-pointer"
+                className="w-full py-3 px-4 bg-[#1D4ED8] hover:bg-[#1E40AF] text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-60 cursor-pointer"
               >
                 {loading
                   ? '...'
@@ -326,7 +330,7 @@ export function AuthModal({ open, lang, onClose, onSuccess }: AuthModalProps) {
 
         <div className="mt-6 pt-5 border-t border-slate-200">
           <div className="flex items-center gap-2 text-xs text-slate-600 mb-3">
-            <ShieldCheck className="w-4 h-4 text-[#0B6E8C] shrink-0" />
+            <ShieldCheck className="w-4 h-4 text-[#1D4ED8] shrink-0" />
             <span>
               {lang === 'ar'
                 ? 'دخول تجريبي فوري لاستعراض المنصة:'
@@ -340,7 +344,7 @@ export function AuthModal({ open, lang, onClose, onSuccess }: AuthModalProps) {
               type="button"
               disabled={loading}
               onClick={() => handleDemoAccess('student')}
-              className="py-2 px-3 border border-slate-300 hover:border-[#0B6E8C] rounded-xl text-xs font-semibold text-[#0F2537] transition-colors cursor-pointer"
+              className="py-2.5 px-3 border border-[#BFDBFE] bg-[#F5F8FF] hover:border-[#1D4ED8] rounded-xl text-xs font-semibold text-[#0B1633] transition-colors cursor-pointer"
             >
               {lang === 'ar' ? 'حساب طالب تجريبي' : lang === 'en' ? 'Demo Student' : 'Démo Élève'}
             </button>
@@ -348,7 +352,7 @@ export function AuthModal({ open, lang, onClose, onSuccess }: AuthModalProps) {
               type="button"
               disabled={loading}
               onClick={() => handleDemoAccess('parent')}
-              className="py-2 px-3 border border-slate-300 hover:border-[#0B6E8C] rounded-xl text-xs font-semibold text-[#0F2537] transition-colors cursor-pointer"
+              className="py-2.5 px-3 border border-slate-300 hover:border-[#1D4ED8] rounded-xl text-xs font-semibold text-[#0B1633] transition-colors cursor-pointer"
             >
               {lang === 'ar' ? 'حساب ولي أمر' : lang === 'en' ? 'Demo Parent' : 'Démo Parent'}
             </button>

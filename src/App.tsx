@@ -2,11 +2,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import {
   ArrowRight,
-  BookOpen,
+  Award,
   Briefcase,
   CheckCircle2,
   Clock,
   Compass,
+  Cpu,
   Globe,
   GraduationCap,
   Layers,
@@ -14,9 +15,11 @@ import {
 } from 'lucide-react';
 import { AiExamStudio } from './components/AiExamStudio';
 import { AuthModal } from './components/AuthModal';
+import { AcademyCrestIcon } from './components/BrandIcons';
 import { CourseWorkspace } from './components/CourseWorkspace';
 import { PastPapersVault } from './components/PastPapersVault';
 import { PlacementTestView } from './components/PlacementTestView';
+import { PrefaceLanding, type PrefaceDestination } from './components/PrefaceLanding';
 import { StudentPortal } from './components/StudentPortal';
 import { TeacherPortal } from './components/TeacherPortal';
 import { TopNav } from './components/TopNav';
@@ -44,7 +47,9 @@ import { apiRequest } from './utils/api';
 
 export default function App() {
   const [lang, setLang] = useState<UiLanguage>('fr');
+  const [showPreface, setShowPreface] = useState(true);
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>('student');
+  const [preselectedTeacherPortalId, setPreselectedTeacherPortalId] = useState<'marwan' | 'mohamed'>('marwan');
   const [activeView, setActiveView] = useState<ActiveView>('placement');
   const [selectedTrack, setSelectedTrack] = useState<CurriculumKey>('all');
   const [targetCourseId, setTargetCourseId] = useState<string | null>(null);
@@ -221,6 +226,11 @@ export default function App() {
     setToken(newToken);
     setUser(loggedInUser);
     syncUserTrackAndTrial(loggedInUser);
+    if (showPreface) {
+      setWorkspaceMode('student');
+      setActiveView('portal');
+      setShowPreface(false);
+    }
     await Promise.all([
       fetchPastPapers(newToken),
       fetchPaidCourses(newToken),
@@ -313,12 +323,69 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handlePrefaceDestination = (dest: PrefaceDestination) => {
+    setWorkspaceMode('student');
+    if (dest.kind === 'placement') {
+      setActiveView('placement');
+    } else if (dest.kind === 'courses') {
+      setSelectedTrack(trackLock && !hasPaidAccess ? trackLock.trackKey : dest.track);
+      setCourseSubMode('courses');
+      setActiveView('courses');
+    } else if (dest.kind === 'hub') {
+      setCourseSubMode('hubs');
+      setCourseHubTab(dest.tab);
+      setActiveView('courses');
+    } else if (dest.kind === 'ai-exam') {
+      setAiInitialCurriculum(dest.curriculum);
+      setActiveView('ai-exams');
+    } else if (dest.kind === 'past-papers') {
+      setActiveView('past-papers');
+    } else if (dest.kind === 'tutors') {
+      if (dest.trainerName) {
+        setPreselectedTrainer(dest.trainerName);
+      }
+      setActiveView('tutors');
+    }
+    setShowPreface(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   return (
     <MotionConfig reducedMotion="user">
-      <div
-        dir={isRtl ? 'rtl' : 'ltr'}
-        className="min-h-screen flex flex-col bg-[#F4F7FA] text-[#0F2537]"
-      >
+      <div dir={isRtl ? 'rtl' : 'ltr'}>
+        {showPreface ? (
+          <PrefaceLanding
+            lang={lang}
+            user={user}
+            onChangeLang={setLang}
+            onStudentLogin={() => {
+              if (user) {
+                setWorkspaceMode('student');
+                setActiveView('portal');
+                setShowPreface(false);
+              } else {
+                setWorkspaceMode('student');
+                setAuthModalOpen(true);
+              }
+            }}
+            onTeacherLogin={(tid) => {
+              if (tid) {
+                setPreselectedTeacherPortalId(tid);
+              }
+              setWorkspaceMode('teacher');
+              setShowPreface(false);
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            onEnterDemo={() => {
+              setWorkspaceMode('student');
+              setActiveView('placement');
+              setShowPreface(false);
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            onNavigateDestination={handlePrefaceDestination}
+          />
+        ) : (
+          <div className="min-h-screen flex flex-col bg-[#F6F8FC] text-[#0B1633]">
         <TopNav
           lang={lang}
           activeView={activeView}
@@ -334,45 +401,74 @@ export default function App() {
             setActiveView(view);
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
+          onSelectCourseTrack={(track) => {
+            setWorkspaceMode('student');
+            setSelectedTrack(trackLock && !hasPaidAccess ? trackLock.trackKey : track);
+            setCourseSubMode('courses');
+            setActiveView('courses');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          onOpenPrepHub={openPrepHub}
+          onLaunchAiExam={launchAiExam}
+          onSelectTrainer={(trainerName) => {
+            setWorkspaceMode('student');
+            setPreselectedTrainer(trainerName);
+            setActiveView('tutors');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
           user={user}
           onOpenAuth={() => setAuthModalOpen(true)}
         />
 
         {/* Workspace Utility Toolbar: Mode Switcher (Student / Teacher Portal) + Language Switcher */}
-        <div className="border-b border-[#DCE4ED] bg-white">
+        <div className="border-b border-[#DCE3F0] bg-white">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex flex-wrap items-center justify-between gap-4">
             <div className="flex flex-wrap items-center gap-3">
               {/* Practical Workspace Switcher */}
-              <div className="inline-flex items-center gap-1 p-0.5 bg-[#EAF1F5] border border-[#D8E3EC] rounded-xl">
+              <div className="inline-flex items-center gap-1 p-0.5 bg-[#EFF3FA] border border-[#D8E1F0] rounded-xl">
                 <button
                   type="button"
                   onClick={() => setWorkspaceMode('student')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
+                  className={`relative px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
                     workspaceMode === 'student'
-                      ? 'bg-white text-[#0F2537] shadow-xs'
-                      : 'text-slate-600 hover:text-[#0F2537]'
+                      ? 'text-white'
+                      : 'text-slate-600 hover:text-[#0B1633]'
                   }`}
                 >
-                  <GraduationCap className="w-3.5 h-3.5 text-[#0B6E8C]" />
-                  <span>{t.modeStudent}</span>
+                  {workspaceMode === 'student' && (
+                    <motion.span
+                      layoutId="workspaceModePill"
+                      transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+                      className="absolute inset-0 bg-[#1D4ED8] rounded-lg shadow-xs"
+                    />
+                  )}
+                  <GraduationCap className="w-3.5 h-3.5 relative z-10" />
+                  <span className="relative z-10">{t.modeStudent}</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setWorkspaceMode('teacher')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
+                  className={`relative px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
                     workspaceMode === 'teacher'
-                      ? 'bg-[#0B6E8C] text-white shadow-xs'
-                      : 'text-slate-600 hover:text-[#0F2537]'
+                      ? 'text-amber-300'
+                      : 'text-slate-600 hover:text-[#0B1633]'
                   }`}
                 >
-                  <Briefcase className="w-3.5 h-3.5" />
-                  <span>{t.modeTeacher}</span>
+                  {workspaceMode === 'teacher' && (
+                    <motion.span
+                      layoutId="workspaceModePill"
+                      transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+                      className="absolute inset-0 bg-[#0B1633] rounded-lg shadow-xs"
+                    />
+                  )}
+                  <Briefcase className="w-3.5 h-3.5 relative z-10" />
+                  <span className="relative z-10">{t.modeTeacher}</span>
                 </button>
               </div>
 
               {trackLock && !hasPaidAccess && (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#EEF5F9] border border-[#BFD8E6] text-[11px] font-semibold text-[#0F2537]">
-                  <Lock className="w-3 h-3 text-[#0B6E8C]" />
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] text-[11px] font-semibold text-[#1E3A8A]">
+                  <Lock className="w-3 h-3 text-[#1D4ED8]" />
                   <span>
                     {trackLock.gradeLevel.toUpperCase()} · {trackLock.curriculum}
                   </span>
@@ -389,10 +485,10 @@ export default function App() {
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-mono font-semibold tabular-nums ${
                     trialExpired
                       ? 'bg-amber-50 border-amber-300 text-amber-900'
-                      : 'bg-slate-50 border-slate-200 text-[#0F2537]'
+                      : 'bg-slate-50 border-slate-200 text-[#0B1633]'
                   }`}
                 >
-                  <Clock className="w-3 h-3 text-[#0B6E8C]" />
+                  <Clock className="w-3 h-3 text-[#1D4ED8]" />
                   <span>
                     {trialExpired
                       ? 'Essai 30m expiré'
@@ -402,8 +498,8 @@ export default function App() {
               )}
             </div>
 
-            <div className="inline-flex items-center gap-1 p-0.5 bg-[#EAF1F5] border border-[#D8E3EC] rounded-xl">
-              <Globe className="w-3.5 h-3.5 text-[#0B6E8C] mx-1.5" />
+            <div className="inline-flex items-center gap-1 p-0.5 bg-[#EFF3FA] border border-[#D8E1F0] rounded-xl">
+              <Globe className="w-3.5 h-3.5 text-[#1D4ED8] mx-1.5" />
               {(
                 [
                   { code: 'fr', label: 'FR' },
@@ -415,13 +511,20 @@ export default function App() {
                   key={opt.code}
                   type="button"
                   onClick={() => setLang(opt.code)}
-                  className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  className={`relative px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                     lang === opt.code
-                      ? 'bg-white text-[#0F2537] shadow-xs'
-                      : 'text-slate-600 hover:text-[#0F2537]'
+                      ? 'text-[#0B1633]'
+                      : 'text-slate-600 hover:text-[#0B1633]'
                   }`}
                 >
-                  {opt.label}
+                  {lang === opt.code && (
+                    <motion.span
+                      layoutId="appLangPill"
+                      transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+                      className="absolute inset-0 bg-white rounded-lg shadow-xs"
+                    />
+                  )}
+                  <span className="relative z-10">{opt.label}</span>
                 </button>
               ))}
             </div>
@@ -435,9 +538,11 @@ export default function App() {
               trainers={trainers}
               papers={papers}
               paidCourses={paidCourses}
+              initialTeacherId={preselectedTeacherPortalId}
               onLaunchAiExam={launchAiExam}
               onTrainersUpdated={fetchTrainers}
               onPapersUpdated={() => fetchPastPapers(token)}
+              onExitTeacherMode={() => setWorkspaceMode('student')}
             />
           ) : (
             <AnimatePresence mode="wait">
@@ -450,8 +555,8 @@ export default function App() {
                   transition={{ duration: 0.25 }}
                 >
                   {/* Academic Command Hero */}
-                  <section className="bg-white border-b border-[#DCE4ED]">
-                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-9 pb-11">
+                  <section className="bg-white border-b border-[#DCE3F0]">
+                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-10 pb-12">
                       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
                         <motion.div
                           initial={{ opacity: 0, y: 14 }}
@@ -459,22 +564,25 @@ export default function App() {
                           transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
                           className="lg:col-span-7 flex flex-col justify-center py-2"
                         >
-                          <p className="text-xs font-semibold tracking-wide text-[#0B6E8C] mb-2.5 flex items-center gap-1.5">
-                            <Compass className="w-4 h-4" />
+                          <p className="font-mono text-xs font-semibold tracking-tight text-[#1D4ED8] mb-3 flex items-center gap-2">
+                            <Compass className="w-4 h-4 shrink-0" />
                             <span>{t.heroKicker}</span>
                           </p>
-                          <h1 className="font-display text-3xl sm:text-5xl font-bold text-[#0F2537] leading-[1.12] tracking-tight text-balance mb-4">
+                          <h1 className="font-display text-[clamp(2.15rem,3.8vw,3.35rem)] font-extrabold text-[#0B1633] leading-[1.08] tracking-tight text-balance mb-5">
                             {t.heroTitle}
                           </h1>
-                          <p className="text-base text-slate-600 leading-relaxed mb-7 max-w-2xl">
+                          <p className="text-[15.5px] text-slate-600 leading-relaxed mb-7 max-w-2xl">
                             {t.heroSubtitle}
                           </p>
 
                           <div className="flex flex-wrap items-center gap-3">
-                            <button
+                            <motion.button
                               type="button"
+                              whileHover={{ y: -2, scale: 1.02 }}
+                              whileTap={{ scale: 0.98 }}
+                              transition={{ type: 'spring', stiffness: 420, damping: 24 }}
                               onClick={scrollToPlacement}
-                              className="px-5 py-3 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-sm font-semibold rounded-xl shadow-xs transition-all inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer"
+                              className="px-6 py-3 bg-[#1D4ED8] hover:bg-[#1E40AF] text-white text-sm font-semibold rounded-xl shadow-xs transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer"
                             >
                               <span>
                                 {lang === 'ar'
@@ -484,25 +592,31 @@ export default function App() {
                                     : 'Commencer mon Test de Niveau'}
                               </span>
                               <ArrowRight className="w-4 h-4" />
-                            </button>
+                            </motion.button>
 
-                            <button
+                            <motion.button
                               type="button"
+                              whileHover={{ y: -2, scale: 1.02 }}
+                              whileTap={{ scale: 0.98 }}
+                              transition={{ type: 'spring', stiffness: 420, damping: 24 }}
                               onClick={() => openPrepHub('step')}
-                              className="px-4 py-3 border border-[#D8E3EC] hover:border-[#0B6E8C] bg-[#F4F7FA] text-[#0F2537] text-sm font-semibold rounded-xl transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer"
+                              className="px-4 py-3 border border-[#CBD5E1] hover:border-[#6D28D9] bg-[#F5F3FF] text-[#4C1D95] text-sm font-semibold rounded-xl transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer"
                             >
-                              <Layers className="w-4 h-4 text-[#0B6E8C]" />
+                              <Layers className="w-4 h-4 text-[#6D28D9]" />
                               <span>STEP · GAT · NAFES · IELTS</span>
-                            </button>
+                            </motion.button>
 
-                            <button
+                            <motion.button
                               type="button"
+                              whileHover={{ y: -2, scale: 1.02 }}
+                              whileTap={{ scale: 0.98 }}
+                              transition={{ type: 'spring', stiffness: 420, damping: 24 }}
                               onClick={() => setWorkspaceMode('teacher')}
-                              className="px-4 py-3 border border-slate-300 hover:border-[#0F2537] bg-white text-[#0F2537] text-sm font-semibold rounded-xl transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer"
+                              className="px-4 py-3 border border-[#FDE68A] hover:border-[#D97706] bg-[#FFFBEB] text-[#0B1633] text-sm font-semibold rounded-xl transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer"
                             >
-                              <Briefcase className="w-4 h-4 text-[#0B6E8C]" />
+                              <Briefcase className="w-4 h-4 text-[#D97706]" />
                               <span>{t.modeTeacher}</span>
-                            </button>
+                            </motion.button>
                           </div>
                         </motion.div>
 
@@ -512,7 +626,7 @@ export default function App() {
                           transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
                           className="lg:col-span-5"
                         >
-                          <div className="h-full min-h-[260px] lg:min-h-[340px] rounded-2xl overflow-hidden border border-[#DCE4ED] shadow-xs bg-slate-100">
+                          <div className="h-full min-h-[260px] lg:min-h-[340px] rounded-3xl overflow-hidden border border-[#DCE3F0] shadow-sm bg-slate-100">
                             <img
                               src="/src/assets/images/hero_international_academy_1795527475897.jpg"
                               alt="Campus académique d'une école internationale à Riyad"
@@ -523,90 +637,122 @@ export default function App() {
                         </motion.div>
                       </div>
 
-                      {/* 4-Step Practical Academic Pathway Strip */}
-                      <div className="mt-9 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <button
+                      {/* 4-Step Color-Coded Academic Pathway Strip with Spring Hover Motion */}
+                      <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <motion.button
                           type="button"
+                          whileHover={{ y: -4, scale: 1.01 }}
+                          whileTap={{ scale: 0.985 }}
+                          transition={{ type: 'spring', stiffness: 420, damping: 24 }}
                           onClick={scrollToPlacement}
-                          className="text-start bg-[#F8FAFC] border border-[#DCE4ED] hover:border-[#0B6E8C] rounded-2xl p-5 transition-all cursor-pointer"
+                          className="text-start bg-[#F5F8FF] border border-[#BFDBFE] hover:border-[#1D4ED8] rounded-2xl p-5 transition-colors cursor-pointer group shadow-xs hover:shadow-md"
                         >
-                          <div className="font-mono text-xs font-bold text-[#0B6E8C] mb-1">
-                            01 · DIAGNOSTIC
+                          <div className="flex items-center justify-between gap-2 mb-3">
+                            <span className="font-mono text-xs font-bold text-[#1D4ED8]">
+                              01. Diagnostic
+                            </span>
+                            <span className="w-9 h-9 rounded-xl bg-[#1D4ED8] text-white flex items-center justify-center shrink-0">
+                              <Compass className="w-4 h-4" />
+                            </span>
                           </div>
-                          <div className="font-display text-base font-bold text-[#0F2537] mb-1">
+                          <div className="font-display text-lg font-bold text-[#0B1633] mb-1">
                             {lang === 'ar'
                               ? 'اختبار تحديد المستوى'
                               : lang === 'en'
                                 ? 'Grade Placement Test'
                                 : 'Test de Niveau par Classe'}
                           </div>
-                          <p className="text-xs text-slate-600">
+                          <p className="text-xs text-slate-600 leading-relaxed">
                             {lang === 'ar'
                               ? 'نقاط القوة والضعف وما ينقصك'
                               : lang === 'en'
                                 ? 'Strengths, weaknesses & missing gaps'
                                 : 'Forces, faiblesses & lacunes ciblées'}
                           </p>
-                        </button>
+                        </motion.button>
 
-                        <button
+                        <motion.button
                           type="button"
+                          whileHover={{ y: -4, scale: 1.01 }}
+                          whileTap={{ scale: 0.985 }}
+                          transition={{ type: 'spring', stiffness: 420, damping: 24 }}
                           onClick={() => openPrepHub('standards')}
-                          className="text-start bg-[#F8FAFC] border border-[#DCE4ED] hover:border-[#0B6E8C] rounded-2xl p-5 transition-all cursor-pointer"
+                          className="text-start bg-[#F8F5FF] border border-[#DDD6FE] hover:border-[#6D28D9] rounded-2xl p-5 transition-colors cursor-pointer group shadow-xs hover:shadow-md"
                         >
-                          <div className="font-mono text-xs font-bold text-[#0B6E8C] mb-1">
-                            02 · PREP HUBS
+                          <div className="flex items-center justify-between gap-2 mb-3">
+                            <span className="font-mono text-xs font-bold text-[#6D28D9]">
+                              02. Prep Hubs
+                            </span>
+                            <span className="w-9 h-9 rounded-xl bg-[#6D28D9] text-white flex items-center justify-center shrink-0">
+                              <Layers className="w-4 h-4" />
+                            </span>
                           </div>
-                          <div className="font-display text-base font-bold text-[#0F2537] mb-1">
+                          <div className="font-display text-lg font-bold text-[#0B1633] mb-1">
                             STEP · GAT · NAFES · IELTS
                           </div>
-                          <p className="text-xs text-slate-600">
+                          <p className="text-xs text-slate-600 leading-relaxed">
                             Phonics · Skill Builder · Standards · Rédaction
                           </p>
-                        </button>
+                        </motion.button>
 
-                        <button
+                        <motion.button
                           type="button"
+                          whileHover={{ y: -4, scale: 1.01 }}
+                          whileTap={{ scale: 0.985 }}
+                          transition={{ type: 'spring', stiffness: 420, damping: 24 }}
                           onClick={() => {
                             setCourseSubMode('courses');
                             setActiveView('courses');
                             window.scrollTo({ top: 0, behavior: 'smooth' });
                           }}
-                          className="text-start bg-[#F8FAFC] border border-[#DCE4ED] hover:border-[#0B6E8C] rounded-2xl p-5 transition-all cursor-pointer"
+                          className="text-start bg-[#F2FBF7] border border-[#A7F3D0] hover:border-[#059669] rounded-2xl p-5 transition-colors cursor-pointer group shadow-xs hover:shadow-md"
                         >
-                          <div className="font-mono text-xs font-bold text-emerald-700 mb-1">
-                            03 · COURS &amp; IA
+                          <div className="flex items-center justify-between gap-2 mb-3">
+                            <span className="font-mono text-xs font-bold text-[#059669]">
+                              03. Cours &amp; IA
+                            </span>
+                            <span className="w-9 h-9 rounded-xl bg-[#059669] text-white flex items-center justify-center shrink-0">
+                              <Cpu className="w-4 h-4" />
+                            </span>
                           </div>
-                          <div className="font-display text-base font-bold text-[#0F2537] mb-1">
+                          <div className="font-display text-lg font-bold text-[#0B1633] mb-1">
                             {lang === 'ar'
                               ? 'دروس مخصصة ومدفوعة + Gemini'
                               : lang === 'en'
                                 ? 'Courses, Paid Tracks & Gemini'
                                 : 'Cours Ciblés, Payants & IA'}
                           </div>
-                          <p className="text-xs text-slate-600">
+                          <p className="text-xs text-slate-600 leading-relaxed">
                             SAT · IB · IGCSE · NAFES · Qudurat · Bac FR
                           </p>
-                        </button>
+                        </motion.button>
 
-                        <button
+                        <motion.button
                           type="button"
+                          whileHover={{ y: -4, scale: 1.01 }}
+                          whileTap={{ scale: 0.985 }}
+                          transition={{ type: 'spring', stiffness: 420, damping: 24 }}
                           onClick={() => {
                             setActiveView('past-papers');
                             window.scrollTo({ top: 0, behavior: 'smooth' });
                           }}
-                          className="text-start bg-[#F8FAFC] border border-[#DCE4ED] hover:border-amber-600 rounded-2xl p-5 transition-all cursor-pointer"
+                          className="text-start bg-[#FFFBEB] border border-[#FDE68A] hover:border-[#D97706] rounded-2xl p-5 transition-colors cursor-pointer group shadow-xs hover:shadow-md"
                         >
-                          <div className="font-mono text-xs font-bold text-amber-700 mb-1">
-                            04 · ANNALES &amp; COACHS
+                          <div className="flex items-center justify-between gap-2 mb-3">
+                            <span className="font-mono text-xs font-bold text-[#B45309]">
+                              04. Annales &amp; Coachs
+                            </span>
+                            <span className="w-9 h-9 rounded-xl bg-[#D97706] text-white flex items-center justify-center shrink-0">
+                              <Award className="w-4 h-4" />
+                            </span>
                           </div>
-                          <div className="font-display text-base font-bold text-[#0F2537] mb-1">
+                          <div className="font-display text-lg font-bold text-[#0B1633] mb-1">
                             {t.benchmarkVault}
                           </div>
-                          <p className="text-xs text-slate-600">
+                          <p className="text-xs text-slate-600 leading-relaxed">
                             Marwan Mhamdi (EN) · Mohamed Cherif (FR/AR)
                           </p>
-                        </button>
+                        </motion.button>
                       </div>
                     </div>
                   </section>
@@ -646,17 +792,17 @@ export default function App() {
 
                   {/* Bottom Academic Leadership Showcase (Live Teacher Profiles, Photos & Skills) */}
                   <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-16">
-                    <div className="bg-[#0F2537] text-white rounded-2xl p-8 sm:p-10 space-y-6 shadow-sm">
+                    <div className="bg-[#081229] text-white rounded-3xl p-8 sm:p-10 space-y-6 shadow-md border border-white/10">
                       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                         <div>
-                          <div className="text-xs font-semibold text-sky-300 mb-2">
+                          <div className="font-mono text-xs font-semibold text-amber-300 mb-2">
                             {lang === 'ar'
                               ? 'إشراف تربوي ثنائي المسار · بوابة المعلم والطالب'
                               : lang === 'en'
                                 ? 'Bilingual Academic Leadership · Student & Teacher Portals'
                                 : 'Direction Pédagogique Trilingue · Suivi Formateur & Élève'}
                           </div>
-                          <h2 className="font-display text-2xl sm:text-3xl font-bold text-balance">
+                          <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-balance">
                             {lang === 'ar'
                               ? 'مروان المحمدي (المسار الإنجليزي) ومحمد شريف (الفرنسي والعربي، نافس والقدرات)'
                               : lang === 'en'
@@ -669,7 +815,7 @@ export default function App() {
                           <button
                             type="button"
                             onClick={() => setWorkspaceMode('teacher')}
-                            className="px-5 py-3 bg-[#0B6E8C] hover:bg-[#0E83A6] text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+                            className="px-5 py-3 bg-[#D97706] hover:bg-[#B45309] text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer"
                           >
                             {t.modeTeacher}
                           </button>
@@ -679,7 +825,7 @@ export default function App() {
                               setActiveView('tutors');
                               window.scrollTo({ top: 0, behavior: 'smooth' });
                             }}
-                            className="px-5 py-3 bg-white text-[#0F2537] hover:bg-slate-100 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+                            className="px-5 py-3 bg-white text-[#081229] hover:bg-slate-100 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
                           >
                             {t.bookTrainerBtn}
                           </button>
@@ -688,51 +834,66 @@ export default function App() {
 
                       {trainers.length > 0 && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                          {trainers.map((tr) => (
-                            <div
-                              key={tr.id}
-                              className="p-5 rounded-xl bg-white/10 border border-white/15 flex items-start gap-4"
-                            >
-                              <div className="w-16 h-16 rounded-xl overflow-hidden border border-white/20 shrink-0 bg-slate-800">
-                                <img
-                                  src={
-                                    tr.photoUrl ||
-                                    (tr.id === 'marwan'
-                                      ? '/src/assets/images/trainer_marwan_mhamdi_1795527476961.jpg'
-                                      : '/src/assets/images/trainer_mohamed_cherif_1795527477326.jpg')
-                                  }
-                                  alt={tr.name}
-                                  className="w-full h-full object-cover"
-                                />
-                              </div>
-                              <div className="min-w-0 space-y-2">
-                                <div>
-                                  <div className="font-display text-base font-bold text-white">
-                                    {tr.name}
-                                  </div>
-                                  <div className="text-xs text-sky-200">{tr.roleTitle}</div>
+                          {trainers.map((tr) => {
+                            const isMarwan = tr.id === 'marwan';
+                            return (
+                              <div
+                                key={tr.id}
+                                className={`p-5 rounded-2xl border flex items-start gap-4 ${
+                                  isMarwan
+                                    ? 'bg-[#10214B] border-[#26448A]'
+                                    : 'bg-[#161B38] border-[#4A3B1B]'
+                                }`}
+                              >
+                                <div
+                                  className={`w-16 h-16 rounded-2xl overflow-hidden border-2 shrink-0 bg-slate-800 ${
+                                    isMarwan ? 'border-[#60A5FA]' : 'border-[#FBBF24]'
+                                  }`}
+                                >
+                                  <img
+                                    src={
+                                      tr.photoUrl ||
+                                      (isMarwan
+                                        ? '/src/assets/images/trainer_marwan_mhamdi_1795527476961.jpg'
+                                        : '/src/assets/images/trainer_mohamed_cherif_1795527477326.jpg')
+                                    }
+                                    alt={tr.name}
+                                    referrerPolicy="no-referrer"
+                                    className="w-full h-full object-cover"
+                                  />
                                 </div>
-                                {tr.experiences?.[0] && (
-                                  <div className="text-xs text-slate-200 flex items-center gap-1.5">
-                                    <CheckCircle2 className="w-3.5 h-3.5 text-sky-300 shrink-0" />
-                                    <span className="truncate">{tr.experiences[0]}</span>
+                                <div className="min-w-0 space-y-1.5">
+                                  <div>
+                                    <div className="font-display text-lg font-bold text-white">
+                                      {tr.name}
+                                    </div>
+                                    <div
+                                      className={`text-xs font-medium ${
+                                        isMarwan ? 'text-sky-300' : 'text-amber-300'
+                                      }`}
+                                    >
+                                      {tr.roleTitle}
+                                    </div>
                                   </div>
-                                )}
-                                {tr.skills && tr.skills.length > 0 && (
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {tr.skills.slice(0, 3).map((sk) => (
-                                      <span
-                                        key={sk}
-                                        className="px-2 py-0.5 rounded bg-white/15 text-[10px] font-semibold text-white"
-                                      >
-                                        {sk}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
+                                  {tr.experiences?.[0] && (
+                                    <div className="text-xs text-slate-200 flex items-center gap-1.5">
+                                      <CheckCircle2
+                                        className={`w-3.5 h-3.5 shrink-0 ${
+                                          isMarwan ? 'text-sky-400' : 'text-emerald-400'
+                                        }`}
+                                      />
+                                      <span className="truncate">{tr.experiences[0]}</span>
+                                    </div>
+                                  )}
+                                  {tr.skills && tr.skills.length > 0 && (
+                                    <p className="text-[11px] text-slate-300 truncate">
+                                      {tr.skills.slice(0, 3).join(' · ')}
+                                    </p>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -912,11 +1073,11 @@ export default function App() {
         </main>
 
         {/* Quiet Academic Footer */}
-        <footer className="border-t border-[#DCE4ED] bg-white mt-auto">
+        <footer className="border-t border-[#DCE3F0] bg-white mt-auto">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-600">
-            <div className="flex items-center gap-2">
-              <BookOpen className="w-4 h-4 text-[#0B6E8C]" />
-              <span className="font-display font-bold text-[#0F2537]">{t.brand}</span>
+            <div className="flex items-center gap-2.5">
+              <AcademyCrestIcon className="w-6 h-6 shrink-0" />
+              <span className="font-display font-extrabold text-[#0B1633]">{t.brand}</span>
               <span className="text-slate-300">·</span>
               <span>SAT · IB · IGCSE · NAFES · Qudurat · STEP · IELTS · Bac Français</span>
             </div>
@@ -958,9 +1119,21 @@ export default function App() {
               >
                 {t.modeTeacher}
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPreface(true);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="hover:text-[#0F2537] cursor-pointer"
+              >
+                {lang === 'ar' ? 'الواجهة الرئيسية' : lang === 'en' ? 'Preface' : 'Préface'}
+              </button>
             </div>
           </div>
         </footer>
+          </div>
+        )}
 
         <AuthModal
           open={authModalOpen}

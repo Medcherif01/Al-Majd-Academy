@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { motion } from 'motion/react';
 import {
   Check,
   Copy,
@@ -259,13 +260,20 @@ export function PastPapersVault({
               key={c}
               type="button"
               onClick={() => setCurriculumFilter(c)}
-              className={`px-3.5 py-2 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              className={`relative px-3.5 py-2 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                 curriculumFilter === c
-                  ? 'bg-white text-slate-900 shadow-xs'
+                  ? 'text-slate-900'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              {c === 'all' ? t.filterAll : c}
+              {curriculumFilter === c && (
+                <motion.span
+                  layoutId="paperFilterHighlight"
+                  transition={{ type: 'spring', stiffness: 440, damping: 32 }}
+                  className="absolute inset-0 bg-white rounded-md shadow-xs"
+                />
+              )}
+              <span className="relative z-10">{c === 'all' ? t.filterAll : c}</span>
             </button>
           ))}
         </div>
@@ -273,12 +281,16 @@ export function PastPapersVault({
 
       {/* Past Papers Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {visiblePapers.map((paper) => {
+        {visiblePapers.map((paper, idx) => {
           const theme = getExamBoardTheme(paper.curriculum);
           return (
-            <article
+            <motion.article
               key={paper.id}
-              className="bg-white border border-slate-200 rounded-2xl overflow-hidden flex flex-col justify-between shadow-xs hover:shadow-md transition-shadow"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25, delay: Math.min(idx * 0.04, 0.24), ease: [0.16, 1, 0.3, 1] }}
+              whileHover={{ y: -4 }}
+              className="bg-white border border-slate-200 rounded-2xl overflow-hidden flex flex-col justify-between shadow-xs hover:shadow-lg transition-shadow"
               dir={paper.language === 'العربية' ? 'rtl' : 'ltr'}
             >
               <div>
@@ -404,7 +416,7 @@ export function PastPapersVault({
                   )}
                 </div>
               </div>
-            </article>
+            </motion.article>
           );
         })}
       </div>

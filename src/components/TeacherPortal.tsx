@@ -48,6 +48,7 @@ import {
   signInWithGoogleForMeet,
 } from '../utils/googleMeetAuth';
 import { MathText } from '../utils/mathFormat';
+import { TeacherPortalEmblem } from './BrandIcons';
 import { ExamPrepHubs } from './ExamPrepHubs';
 import { InteractiveWhiteboard } from './InteractiveWhiteboard';
 import type {
@@ -72,6 +73,7 @@ interface TeacherPortalProps {
   trainers?: TrainerProfile[];
   papers?: PastPaperSummary[];
   paidCourses?: PaidCourseItem[];
+  initialTeacherId?: 'marwan' | 'mohamed';
   onLaunchAiExam?: (curriculum: string) => void;
   onTrainersUpdated?: () => Promise<void> | void;
   onPapersUpdated?: () => Promise<void> | void;
@@ -163,6 +165,7 @@ export function TeacherPortal({
   trainers = [],
   papers = [],
   paidCourses = [],
+  initialTeacherId = 'marwan',
   onLaunchAiExam,
   onTrainersUpdated,
   onPapersUpdated,
@@ -174,7 +177,9 @@ export function TeacherPortal({
   const [authChecking, setAuthChecking] = useState(true);
   const [authConfigured, setAuthConfigured] = useState(false);
   const [authUsesEnvPasscode, setAuthUsesEnvPasscode] = useState(false);
-  const [authLoginInput, setAuthLoginInput] = useState('Marwen05');
+  const [authLoginInput, setAuthLoginInput] = useState(
+    initialTeacherId === 'mohamed' ? 'med01' : 'Marwen05'
+  );
   const [authPasswordInput, setAuthPasswordInput] = useState('');
   const [authShowPassword, setAuthShowPassword] = useState(false);
   const [authError, setAuthError] = useState('');
@@ -184,7 +189,7 @@ export function TeacherPortal({
   const [setupPassword, setSetupPassword] = useState('');
   const [setupConfirm, setSetupConfirm] = useState('');
 
-  const [teacherId, setTeacherId] = useState<'marwan' | 'mohamed'>('marwan');
+  const [teacherId, setTeacherId] = useState<'marwan' | 'mohamed'>(initialTeacherId);
   const [activeTab, setActiveTab] = useState<TeacherSubTab>('students-codes');
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<string>('');
@@ -1246,26 +1251,28 @@ export function TeacherPortal({
   if (!teacherToken) {
     return (
       <section className="max-w-lg mx-auto px-4 py-14">
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-md space-y-6">
-          <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
-            <div>
-              <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#0B6E8C] mb-1">
-                <Lock className="w-3.5 h-3.5" />
-                <span>Accès Privé Formateur · Non publié côté élève</span>
+        <div className="bg-white border border-[#DCE3F0] rounded-3xl p-6 sm:p-8 shadow-xl shadow-[#081229]/5 space-y-6">
+          <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-5">
+            <div className="flex items-center gap-3.5">
+              <TeacherPortalEmblem className="w-12 h-12 shrink-0" />
+              <div>
+                <div className="font-mono text-xs font-semibold text-[#B45309] mb-0.5">
+                  Portail Privé Formateur · Accès Réservé
+                </div>
+                <h1 className="font-display text-2xl font-extrabold text-[#0B1633] tracking-tight">
+                  {authChecking
+                    ? 'Vérification...'
+                    : !authConfigured
+                      ? 'Initialisation du Mot de Passe'
+                      : 'Connexion Espace Formateur'}
+                </h1>
               </div>
-              <h1 className="font-display text-2xl font-bold text-[#0F2537]">
-                {authChecking
-                  ? 'Vérification...'
-                  : !authConfigured
-                    ? 'Initialisation du Mot de Passe Formateur'
-                    : 'Connexion Espace Formateur'}
-              </h1>
             </div>
             {onExitTeacherMode && (
               <button
                 type="button"
                 onClick={onExitTeacherMode}
-                className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-[#0F2537] border border-slate-200 rounded-lg cursor-pointer"
+                className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-[#0B1633] border border-slate-200 rounded-xl whitespace-nowrap shrink-0 cursor-pointer"
               >
                 Site Élève
               </button>
@@ -1273,7 +1280,7 @@ export function TeacherPortal({
           </div>
 
           {authError && (
-            <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-900">
+            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-900">
               {authError}
             </div>
           )}
@@ -1338,32 +1345,32 @@ export function TeacherPortal({
               <button
                 type="submit"
                 disabled={authSubmitting}
-                className="w-full py-3 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-sm font-semibold rounded-xl inline-flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full py-3 bg-[#0B1633] hover:bg-[#172957] text-white text-sm font-semibold rounded-xl inline-flex items-center justify-center gap-2 cursor-pointer"
               >
-                <ShieldCheck className="w-4 h-4" />
+                <ShieldCheck className="w-4 h-4 text-amber-300" />
                 <span>{authSubmitting ? 'Activation...' : 'Créer l’accès privé formateur'}</span>
               </button>
             </form>
           ) : (
             <form onSubmit={handleTeacherLogin} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 mb-2">
                   Profil / Identifiant Formateur
                 </label>
-                <div className="grid grid-cols-2 gap-2 mb-2">
+                <div className="grid grid-cols-2 gap-2.5 mb-2.5">
                   <button
                     type="button"
                     onClick={() => {
                       setAuthLoginInput('Marwen05');
                       setAuthError('');
                     }}
-                    className={`px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer ${
+                    className={`px-3 py-2.5 rounded-xl border-2 text-xs font-bold transition-all cursor-pointer ${
                       authLoginInput.toLowerCase().includes('marw')
-                        ? 'border-[#0B6E8C] bg-[#EEF5F9] text-[#0F2537]'
-                        : 'border-slate-200 text-slate-600'
+                        ? 'border-[#1D4ED8] bg-[#EFF6FF] text-[#1E3A8A]'
+                        : 'border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}
                   >
-                    {marwanDisplayName}
+                    {marwanDisplayName} · EN
                   </button>
                   <button
                     type="button"
@@ -1371,15 +1378,15 @@ export function TeacherPortal({
                       setAuthLoginInput('med01');
                       setAuthError('');
                     }}
-                    className={`px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer ${
+                    className={`px-3 py-2.5 rounded-xl border-2 text-xs font-bold transition-all cursor-pointer ${
                       authLoginInput.toLowerCase().includes('med') ||
                       authLoginInput.toLowerCase().includes('cherif') ||
                       authLoginInput.toLowerCase().includes('mohamed')
-                        ? 'border-[#0B6E8C] bg-[#EEF5F9] text-[#0F2537]'
-                        : 'border-slate-200 text-slate-600'
+                        ? 'border-[#059669] bg-[#ECFDF5] text-[#065F46]'
+                        : 'border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}
                   >
-                    {mohamedDisplayName}
+                    {mohamedDisplayName} · FR/AR
                   </button>
                 </div>
                 <input
@@ -1388,8 +1395,8 @@ export function TeacherPortal({
                   autoComplete="username"
                   value={authLoginInput}
                   onChange={(e) => setAuthLoginInput(e.target.value)}
-                  placeholder="Identifiant formateur (Marwen05 ou med01)"
-                  className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl"
+                  placeholder="Identifiant formateur"
+                  className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]"
                 />
               </div>
 
@@ -1404,7 +1411,7 @@ export function TeacherPortal({
                     value={authPasswordInput}
                     onChange={(e) => setAuthPasswordInput(e.target.value)}
                     placeholder="Saisissez votre mot de passe formateur"
-                    className="w-full px-3.5 py-2.5 pe-10 text-sm border border-slate-300 rounded-xl"
+                    className="w-full px-3.5 py-2.5 pe-10 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#D97706]"
                   />
                   <button
                     type="button"
@@ -1419,9 +1426,9 @@ export function TeacherPortal({
               <button
                 type="submit"
                 disabled={authSubmitting}
-                className="w-full py-3 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-sm font-semibold rounded-xl inline-flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full py-3.5 bg-[#0B1633] hover:bg-[#162859] text-white text-sm font-semibold rounded-xl inline-flex items-center justify-center gap-2 transition-colors cursor-pointer"
               >
-                <KeyRound className="w-4 h-4" />
+                <KeyRound className="w-4 h-4 text-amber-300" />
                 <span>{authSubmitting ? 'Vérification...' : 'Entrer dans l’Espace Formateur'}</span>
               </button>
             </form>

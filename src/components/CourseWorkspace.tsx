@@ -457,16 +457,23 @@ export function CourseWorkspace({
                     setSelectedOption(null);
                     setCheckpointSubmitted(false);
                   }}
-                  className={`px-3.5 py-2 text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 ${
+                  className={`relative px-3.5 py-2 text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 ${
                     disabled
                       ? 'text-slate-400 opacity-50 cursor-not-allowed'
                       : active
-                        ? 'bg-white text-slate-900 shadow-xs cursor-pointer'
+                        ? 'text-slate-900 cursor-pointer'
                         : 'text-slate-600 hover:text-slate-900 cursor-pointer'
                   }`}
                 >
-                  {disabled && <Lock className="w-3 h-3" />}
-                  <span>{f.label}</span>
+                  {active && !disabled && (
+                    <motion.span
+                      layoutId="courseTrackHighlight"
+                      transition={{ type: 'spring', stiffness: 440, damping: 32 }}
+                      className="absolute inset-0 bg-white rounded-lg shadow-xs"
+                    />
+                  )}
+                  {disabled && <Lock className="w-3 h-3 relative z-10" />}
+                  <span className="relative z-10">{f.label}</span>
                 </button>
               );
             })}
