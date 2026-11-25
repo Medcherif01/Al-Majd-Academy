@@ -10,7 +10,7 @@ export interface PastPaperItem {
   id: string;
   code: string;
   title: string;
-  curriculum: 'American (SAT/AP)' | 'IB Diploma' | 'IGCSE & A-Level' | 'NAFES (ETEC)' | 'Qudurat & Tahsili' | 'Bac Français';
+  curriculum: 'American (SAT/AP)' | 'IB Diploma' | 'IGCSE & A-Level' | 'NAFS (ETEC)' | 'Qudurat & Tahsili' | 'Bac Français';
   subject: string;
   year: number;
   examDate?: string;
@@ -177,9 +177,9 @@ export const PAST_PAPERS_CATALOG: PastPaperItem[] = [
   },
   {
     id: 'nafes-grade9-math-2025',
-    code: 'ETEC-NAFES-G9-2025',
-    title: 'اختبار نافس الوطني (NAFES) — الرياضيات والعلوم الصف الثالث متوسط + الحل النموذجي',
-    curriculum: 'NAFES (ETEC)',
+    code: 'ETEC-NAFS-G9-2025',
+    title: 'اختبار نافس الوطني (NAFS) — الرياضيات والعلوم الصف الثالث متوسط + الحل النموذجي',
+    curriculum: 'NAFS (ETEC)',
     subject: 'الرياضيات والعلوم',
     year: 2025,
     examDate: 'أبريل 2025',
@@ -366,24 +366,24 @@ export const TRAINERS: TrainerProfile[] = [
     roleTitle: 'Formateur Principal — Cursus Français & Arabe',
     photoUrl: '/src/assets/images/trainer_mohamed_cherif_1795527477326.jpg',
     languages: ['Français', 'العربية'],
-    curricula: ['Baccalauréat Français (AEFE)', 'Brevet (DNB)', 'IB French B', 'NAFES / نافس (ETEC)', 'Qudurat (القدرات العامة)', 'Tahsili (التحصيلي)'],
+    curricula: ['Baccalauréat Français (AEFE)', 'Brevet (DNB)', 'IB French B', 'NAFS / نافس (ETEC)', 'Qudurat (القدرات العامة)', 'Tahsili (التحصيلي)'],
     hourlyRateSar: 180,
     packRateSar: 800,
-    credentials: 'Agrégation & Master Pédagogie · Expert AEFE, ETEC Nafes & Qiyas (Qudurat / Tahsili)',
+    credentials: 'Agrégation & Master Pédagogie · Expert AEFE, ETEC NAFS & Qiyas (Qudurat / Tahsili)',
     bioFr:
-      'Formateur expert pour l’ensemble des programmes en français et en arabe : Baccalauréat & Brevet des lycées français d’Arabie Saoudite, IB French B, ainsi que la préparation intensive aux examens nationaux Nafes, Qudurat et Tahsili.',
+      'Formateur expert pour l’ensemble des programmes en français et en arabe : Baccalauréat & Brevet des lycées français d’Arabie Saoudite, IB French B, ainsi que la préparation intensive aux examens nationaux NAFS, Qudurat et Tahsili.',
     bioEn:
-      'Lead specialist for all French and Arabic curricula: AEFE French Baccalauréat & Brevet, IB French B, plus intensive preparation for Saudi national assessments NAFES, Qudurat (GAT), and Tahsili (SAAT).',
+      'Lead specialist for all French and Arabic curricula: AEFE French Baccalauréat & Brevet, IB French B, plus intensive preparation for Saudi national assessments NAFS, Qudurat (GAT), and Tahsili (SAAT).',
     bioAr:
       'المدرب الرئيسي للمسارات الفرنسية والعربية: البكالوريا الفرنسية (AEFE)، البريفيه، IB فرنسي، بالإضافة إلى التأهيل المتقن لاختبارات نافس (ETEC) والقدرات العامة والتحصيلي (قياس).',
     experiences: [
       '10+ ans d’encadrement des classes de 3e, Première et Terminale AEFE en Arabie Saoudite',
-      'Spécialiste certifié des référentiels ETEC (NAFES G3/G6/G9) et Qiyas (Qudurat & Tahsili)',
+      'Spécialiste certifié des référentiels ETEC (NAFS G3/G6/G9) et Qiyas (Qudurat & Tahsili)',
       '96% de réussite aux mentions Très Bien / Bien et scores 92+ aux épreuves Qiyas',
     ],
     skills: [
       'Bac Français AEFE & DNB Brevet',
-      'NAFES (نافس ETEC) G3 · G6 · G9',
+      'NAFS (نافس ETEC) G3 · G6 · G9',
       'Qudurat & Tahsili Sans Calculatrice',
       'IB French B & Expression Écrite',
       'Remédiation Ciblée & Méthodologie',

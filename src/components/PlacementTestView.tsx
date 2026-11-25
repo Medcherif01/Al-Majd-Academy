@@ -50,7 +50,7 @@ const CURRICULA_OPTIONS: {
   { id: 'American (SAT / AP)', label: 'American (Digital SAT / AP)', trackKey: 'american' },
   { id: 'IB Diploma', label: 'IB Diploma (DP / MYP)', trackKey: 'ib' },
   { id: 'IGCSE & A-Level', label: 'Cambridge IGCSE & A-Level', trackKey: 'british' },
-  { id: 'NAFES (ETEC)', label: 'NAFES / نافس (ETEC)', trackKey: 'nafes' },
+  { id: 'NAFS (ETEC)', label: 'NAFS / نافس (ETEC)', trackKey: 'nafes' },
   { id: 'Qudurat & Tahsili', label: 'Qudurat & Tahsili (قياس)', trackKey: 'qiyas' },
   { id: 'Bac Français AEFE', label: 'Système Français (Brevet / Bac AEFE)', trackKey: 'french' },
 ];
@@ -59,7 +59,7 @@ function resolveTrackKey(currId: string): Exclude<CurriculumKey, 'all'> {
   const found = CURRICULA_OPTIONS.find((c) => c.id === currId);
   if (found) return found.trackKey;
   const lower = currId.toLowerCase();
-  if (lower.includes('nafes')) return 'nafes';
+  if (lower.includes('nafs') || lower.includes('nafes')) return 'nafes';
   if (lower.includes('qudurat') || lower.includes('tahsili') || lower.includes('qiyas')) return 'qiyas';
   if (lower.includes('bac') || lower.includes('français')) return 'french';
   if (lower.includes('igcse')) return 'british';
@@ -88,7 +88,7 @@ export function PlacementTestView({
   const [step, setStep] = useState<'setup' | 'quiz' | 'report'>(latestResult ? 'report' : 'setup');
   const [selectedGrade, setSelectedGrade] = useState<string>(trackLock?.gradeLevel || 'grade-9');
   const [selectedCurriculum, setSelectedCurriculum] = useState<string>(
-    trackLock?.curriculum || 'NAFES (ETEC)'
+    trackLock?.curriculum || 'NAFS (ETEC)'
   );
   const [testLanguage, setTestLanguage] = useState<'Français' | 'English' | 'العربية'>(
     lang === 'ar' ? 'العربية' : lang === 'en' ? 'English' : 'Français'
@@ -120,7 +120,7 @@ export function PlacementTestView({
   const handleCurriculumSelect = (currId: string) => {
     if (isLocked) return;
     setSelectedCurriculum(currId);
-    if (currId.includes('NAFES') || currId.includes('Qudurat')) {
+    if (currId.includes('NAFS') || currId.includes('NAFES') || currId.includes('Qudurat')) {
       setTestLanguage('العربية');
     } else if (currId.includes('Bac Français')) {
       setTestLanguage('Français');

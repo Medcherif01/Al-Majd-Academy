@@ -157,7 +157,7 @@ export function TutoringSection({
         setLanguage(trackLock.trackKey === 'french' ? 'Français' : 'العربية');
         setCurriculum(
           trackLock.trackKey === 'nafes'
-            ? 'NAFES (ETEC Grade 3/6/9)'
+            ? 'NAFS (ETEC Grade 3/6/9)'
             : trackLock.trackKey === 'qiyas'
               ? 'Qudurat & Tahsili (قياس)'
               : 'Baccalauréat Français (AEFE)'

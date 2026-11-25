@@ -202,7 +202,7 @@ Generate an authentic, rigorous exam paper strictly adhering to the official rul
 - American Digital SAT / AP: College Board style, realistic problem framing, Desmos/calculator policy, 4 crisp MCQ options (A, B, C, D) or short grid-in.
 - IB Diploma (DP): IBO command terms ("State", "Calculate", "Determine", "Show that", "Evaluate"), explicit mark allocation, method & accuracy breakdown.
 - Cambridge IGCSE / Edexcel A-Level: Significant figures, SI units, structured mark scheme points.
-- Nafes (ETEC نافس): Saudi Education & Training Evaluation Commission national benchmark competencies in Reading, Math, and Science.
+- NAFS (ETEC نافس): Saudi Education & Training Evaluation Commission national benchmark competencies in Reading, Math, and Science.
 - Qudurat (GAT القدرات العامة) & Tahsili (SAAT التحصيلي): Qiyas quantitative comparisons, verbal analogies/comprehension, no-calculator rapid strategies.
 - French Baccalauréat / AEFE: Rigorous French academic phrasing, theorem citations, structured step-by-step barème.
 
@@ -356,7 +356,7 @@ export async function extractExactPastPaperWithGemini(
       extractedDocumentText = utf8;
     }
 
-    const systemInstruction = `You are a meticulous academic archival transcriber for Al-Majd International Academy.
+    const systemInstruction = `You are a meticulous academic archival transcriber for Dateacher.
 Your ONLY task is to convert the uploaded official exam document into a structured JSON representation of the EXACT SAME EXAM.
 
 STRICT VERBATIM PRESERVATION RULES:

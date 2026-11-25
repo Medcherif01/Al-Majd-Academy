@@ -104,7 +104,7 @@ export function TopNav({
           },
         },
         {
-          label: 'NAFES (ETEC)',
+          label: 'NAFS (ETEC)',
           action: () => {
             onSelectCourseTrack?.('nafes');
             setHoveredNav(null);
@@ -140,35 +140,42 @@ export function TopNav({
         {
           label: 'Digital SAT / AP',
           action: () => {
-            onLaunchAiExam?.('American SAT');
+            onLaunchAiExam?.('American Digital SAT');
             setHoveredNav(null);
           },
         },
         {
           label: 'IB Diploma',
           action: () => {
-            onLaunchAiExam?.('IB Diploma');
+            onLaunchAiExam?.('IB Diploma (DP)');
             setHoveredNav(null);
           },
         },
         {
           label: 'Cambridge IGCSE',
           action: () => {
-            onLaunchAiExam?.('Cambridge IGCSE');
+            onLaunchAiExam?.('Cambridge IGCSE / A-Level');
             setHoveredNav(null);
           },
         },
         {
-          label: 'NAFES & Qudurat',
+          label: 'NAFS (ETEC)',
           action: () => {
-            onLaunchAiExam?.('Qudurat & Tahsili');
+            onLaunchAiExam?.('NAFS / نافس (ETEC)');
+            setHoveredNav(null);
+          },
+        },
+        {
+          label: 'Qudurat & Tahsili',
+          action: () => {
+            onLaunchAiExam?.('Qudurat & Tahsili (قياس)');
             setHoveredNav(null);
           },
         },
         {
           label: 'Bac Français',
           action: () => {
-            onLaunchAiExam?.('Bac Français');
+            onLaunchAiExam?.('Baccalauréat Français (AEFE)');
             setHoveredNav(null);
           },
         },

@@ -62,7 +62,7 @@ export const TRANSLATIONS: Record<
   }
 > = {
   fr: {
-    brand: 'Al-Majd Academy',
+    brand: 'Dateacher',
     navPlacement: 'Test de Niveau',
     navCourses: 'Cours & Hubs',
     navAiExams: 'Examens IA',
@@ -74,7 +74,7 @@ export const TRANSLATIONS: Record<
     heroKicker: 'Écoles Internationales & Programmes Nationaux · Arabie Saoudite',
     heroTitle: 'Maîtrisez les examens internationaux avec rigueur et méthode',
     heroSubtitle:
-      'Plateforme académique complète : Test de niveau par classe, cours ciblés, hubs pratiques (STEP, GAT, NAFES, IELTS, Phonics, Skill Builder), générateur IA Gemini, Past Papers corrigés et suivi formateur.',
+      'Plateforme académique complète : Test de niveau par classe, cours ciblés, hubs pratiques (STEP, GAT, NAFS, IELTS, Phonics, Skill Builder), générateur IA Gemini, Past Papers corrigés et suivi formateur.',
     heroPrimaryCta: 'Explorer les Cours',
     heroSecondaryCta: 'Générer un Examen IA',
     benchmarkTracks: '6 Systèmes d’Examens',
@@ -85,12 +85,12 @@ export const TRANSLATIONS: Record<
     filterAmerican: 'American (SAT / AP)',
     filterIb: 'IB Diploma',
     filterBritish: 'IGCSE & A-Level',
-    filterNafes: 'NAFES (ETEC)',
+    filterNafes: 'NAFS (ETEC)',
     filterQiyas: 'Qudurat & Tahsili',
     filterFrench: 'Bac Français (AEFE)',
     coursesHeading: 'Bibliothèque de Cours, Règles & Hubs d’Entraînement',
     coursesSubheading:
-      'Alternez entre cours détaillés, cours intensifs payants et hubs de pratique rapide (STEP, GAT, NAFES, IELTS, Phonics, Skill Builder & Rédaction).',
+      'Alternez entre cours détaillés, cours intensifs payants et hubs de pratique rapide (STEP, GAT, NAFS, IELTS, Phonics, Skill Builder & Rédaction).',
     openCourse: 'Ouvrir le module',
     examRulesTitle: 'Règlement Officiel de l’Épreuve',
     workedExampleTitle: 'Exemple Rédigé & Barème',
@@ -101,7 +101,7 @@ export const TRANSLATIONS: Record<
     lessonCompleted: 'Leçon validée',
     aiStudioTitle: 'Studio de Génération d’Examens par IA Gemini',
     aiStudioSubtitle:
-      'Créez instantanément des sujets conformes aux barèmes officiels SAT, IB, IGCSE, NAFES, Qudurat, Tahsili, STEP, IELTS ou Bac Français.',
+      'Créez instantanément des sujets conformes aux barèmes officiels SAT, IB, IGCSE, NAFS, Qudurat, Tahsili, STEP, IELTS ou Bac Français.',
     generateExamBtn: 'Générer l’Examen Officiel',
     generatingExamBtn: 'Rédaction par Gemini en cours...',
     pastPapersTitle: 'Coffre Past Papers & Corrections Officielles',
@@ -109,7 +109,7 @@ export const TRANSLATIONS: Record<
       'Consultez gratuitement la Question 1 et le règlement officiel, puis contactez votre formateur sur WhatsApp pour activer le sujet complet et sa correction (Mark Scheme).',
     allAccessBannerTitle: 'Pass Semestre Tous Examens & Corrections',
     allAccessBannerDesc:
-      'Accès illimité au téléchargement de tous les Past Papers et leurs barèmes officiels (SAT, IB, IGCSE, NAFES, Qudurat, Bac) — activation directe via WhatsApp.',
+      'Accès illimité au téléchargement de tous les Past Papers et leurs barèmes officiels (SAT, IB, IGCSE, NAFS, Qudurat, Bac) — activation directe via WhatsApp.',
     unlockAllAccessBtn: 'Activer via WhatsApp',
     previewQ1: 'Aperçu Q1',
     unlockPaperBtn: 'Activer via WhatsApp',
@@ -127,7 +127,7 @@ export const TRANSLATIONS: Record<
     navPrepHubs: 'Hubs Prep & Compétences',
   },
   en: {
-    brand: 'Al-Majd Academy',
+    brand: 'Dateacher',
     navPlacement: 'Placement Test',
     navCourses: 'Courses & Hubs',
     navAiExams: 'AI Exams',
@@ -139,7 +139,7 @@ export const TRANSLATIONS: Record<
     heroKicker: 'International Schools & National Assessments · Saudi Arabia',
     heroTitle: 'Master international exams under official board rules',
     heroSubtitle:
-      'Academic command platform: grade-level placement test, structured courses, interactive prep hubs (STEP, GAT, NAFES, IELTS, Phonics, Skill Builder), Gemini AI exams, paid Past Papers, and teacher coaching.',
+      'Academic command platform: grade-level placement test, structured courses, interactive prep hubs (STEP, GAT, NAFS, IELTS, Phonics, Skill Builder), Gemini AI exams, paid Past Papers, and teacher coaching.',
     heroPrimaryCta: 'Explore Courses',
     heroSecondaryCta: 'Generate AI Exam',
     benchmarkTracks: '6 Exam Systems',
@@ -150,12 +150,12 @@ export const TRANSLATIONS: Record<
     filterAmerican: 'American (SAT / AP)',
     filterIb: 'IB Diploma',
     filterBritish: 'IGCSE & A-Level',
-    filterNafes: 'NAFES (ETEC)',
+    filterNafes: 'NAFS (ETEC)',
     filterQiyas: 'Qudurat & Tahsili',
     filterFrench: 'French Bac (AEFE)',
     coursesHeading: 'Curriculum Library, Rules & Prep Hubs',
     coursesSubheading:
-      'Switch smoothly between full lessons, paid intensive courses, and focused practice hubs (STEP, GAT, NAFES, IELTS, Phonics, Skill Builder & Writing).',
+      'Switch smoothly between full lessons, paid intensive courses, and focused practice hubs (STEP, GAT, NAFS, IELTS, Phonics, Skill Builder & Writing).',
     openCourse: 'Open Module',
     examRulesTitle: 'Official Examination Rules',
     workedExampleTitle: 'Worked Example & Mark Allocation',
@@ -166,7 +166,7 @@ export const TRANSLATIONS: Record<
     lessonCompleted: 'Completed',
     aiStudioTitle: 'Gemini AI International Exam Studio',
     aiStudioSubtitle:
-      'Generate custom timed exam papers aligned with SAT, IB, IGCSE, NAFES, Qudurat, Tahsili, STEP, IELTS, or French Bac standards.',
+      'Generate custom timed exam papers aligned with SAT, IB, IGCSE, NAFS, Qudurat, Tahsili, STEP, IELTS, or French Bac standards.',
     generateExamBtn: 'Generate Official Exam',
     generatingExamBtn: 'Drafting with Gemini...',
     pastPapersTitle: 'Past Papers & Official Mark Schemes Vault',
@@ -174,7 +174,7 @@ export const TRANSLATIONS: Record<
       'Inspect Question 1 and board rules for free, then contact your teacher on WhatsApp to activate the full exam paper and official Mark Scheme.',
     allAccessBannerTitle: 'Full Semester All-Access Pass',
     allAccessBannerDesc:
-      'Unlock unlimited downloads of all Past Papers and official Mark Schemes across SAT, IB, IGCSE, NAFES, Qudurat, and French Bac via direct teacher WhatsApp activation.',
+      'Unlock unlimited downloads of all Past Papers and official Mark Schemes across SAT, IB, IGCSE, NAFS, Qudurat, and French Bac via direct teacher WhatsApp activation.',
     unlockAllAccessBtn: 'Activate via WhatsApp',
     previewQ1: 'Preview Q1',
     unlockPaperBtn: 'Activate via WhatsApp',
@@ -192,7 +192,7 @@ export const TRANSLATIONS: Record<
     navPrepHubs: 'Prep Hubs & Skills',
   },
   ar: {
-    brand: 'أكاديمية المجد',
+    brand: 'Dateacher',
     navPlacement: 'اختبار المستوى',
     navCourses: 'الدروس والتدريب',
     navAiExams: 'اختبارات الذكاء',
@@ -204,7 +204,7 @@ export const TRANSLATIONS: Record<
     heroKicker: 'المدارس العالمية والاختبارات الوطنية · المملكة العربية السعودية',
     heroTitle: 'أتقن الاختبارات الدولية والوطنية وفق الأنظمة المعتمدة',
     heroSubtitle:
-      'منصة أكاديمية متكاملة: اختبار تحديد المستوى حسب الصف، دروس مخصصة ومدفوعة، مسارات STEP وGAT ونافس وIELTS والصوتيات وبناء المهارات، مولد اختبارات Gemini، وبوابة المعلم.',
+      'منصة أكاديمية متكاملة: اختبار تحديد المستوى حسب الصف، دروس مخصصة ومدفوعة، مسارات STEP وGAT ونافس NAFS وIELTS والصوتيات وبناء المهارات، مولد اختبارات Gemini، وبوابة المعلم.',
     heroPrimaryCta: 'استعراض الدروس',
     heroSecondaryCta: 'توليد اختبار بالذكاء',
     benchmarkTracks: '6 أنظمة تعليمية',
@@ -215,7 +215,7 @@ export const TRANSLATIONS: Record<
     filterAmerican: 'المنهج الأمريكي (SAT/AP)',
     filterIb: 'البكالوريا الدولية IB',
     filterBritish: 'كامبريدج IGCSE',
-    filterNafes: 'اختبار نافس (ETEC)',
+    filterNafes: 'نافس NAFS (ETEC)',
     filterQiyas: 'القدرات والتحصيلي',
     filterFrench: 'البكالوريا الفرنسية',
     coursesHeading: 'مكتبة الدروس ومراكز التدريب العملي',

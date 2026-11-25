@@ -5,7 +5,7 @@ export type TrackKey = 'american' | 'ib' | 'british' | 'nafes' | 'qiyas' | 'fren
 
 export function mapCurriculumToTrackKey(curriculum: string): TrackKey {
   const c = (curriculum || '').toLowerCase();
-  if (c.includes('nafes') || c.includes('نافس')) return 'nafes';
+  if (c.includes('nafs') || c.includes('nafes') || c.includes('نافس')) return 'nafes';
   if (c.includes('qudurat') || c.includes('tahsili') || c.includes('qiyas') || c.includes('قياس') || c.includes('gat')) {
     return 'qiyas';
   }
@@ -109,9 +109,9 @@ export const PAID_COURSES_CATALOG: PaidCourseCatalogItem[] = [
   },
   {
     id: 'paid-nafes-excellence',
-    title: 'برنامج التميز لاختبار نافس الوطني (NAFES) — رياضيات وعلوم وقراءة',
+    title: 'برنامج التميز لاختبار نافس الوطني (NAFS) — رياضيات وعلوم وقراءة',
     curriculumKey: 'nafes',
-    curriculumLabel: 'NAFES / نافس (ETEC)',
+    curriculumLabel: 'NAFS / نافس (ETEC)',
     gradeBands: ['grade-3-5', 'grade-6-8', 'grade-9'],
     language: 'العربية',
     trainerId: 'mohamed',
@@ -167,19 +167,19 @@ export const GRADE_LEVEL_OPTIONS = [
   {
     id: 'grade-3-5',
     labelFr: 'Primaire (CE2 – CM2 · Grades 3–5 · نافس الصف الثالث)',
-    labelEn: 'Elementary (Grades 3–5 · NAFES Grade 3)',
+    labelEn: 'Elementary (Grades 3–5 · NAFS Grade 3)',
     labelAr: 'المرحلة الابتدائية (الصفوف 3–5 · نافس الصف الثالث)',
   },
   {
     id: 'grade-6-8',
     labelFr: 'Collège (6e – 4e · Grades 6–8 · نافس الصف السادس)',
-    labelEn: 'Middle School (Grades 6–8 · NAFES Grade 6)',
+    labelEn: 'Middle School (Grades 6–8 · NAFS Grade 6)',
     labelAr: 'المرحلة المتوسطة (الصفوف 6–8 · نافس الصف السادس)',
   },
   {
     id: 'grade-9',
     labelFr: '3e / Grade 9 (Brevet · Pre-IGCSE · نافس الثالث متوسط)',
-    labelEn: 'Grade 9 (Pre-IGCSE · Brevet · NAFES Grade 9)',
+    labelEn: 'Grade 9 (Pre-IGCSE · Brevet · NAFS Grade 9)',
     labelAr: 'الصف الثالث متوسط (Grade 9 · نافس · تمهيدي IGCSE)',
   },
   {
@@ -766,6 +766,7 @@ export async function evaluatePlacementTest(input: {
   const isFrenchOrArabic =
     input.language === 'Français' ||
     input.language === 'العربية' ||
+    input.curriculum.toLowerCase().includes('nafs') ||
     input.curriculum.toLowerCase().includes('nafes') ||
     input.curriculum.toLowerCase().includes('qudurat') ||
     input.curriculum.toLowerCase().includes('bac');
@@ -782,7 +783,7 @@ export async function evaluatePlacementTest(input: {
   } else if (currLower.includes('igcse') || currLower.includes('british')) {
     recommendedCourseIds = ['igcse-physics-0625'];
     recommendedPaidCourseId = 'paid-igcse-stem-mastery';
-  } else if (currLower.includes('nafes')) {
+  } else if (currLower.includes('nafs') || currLower.includes('nafes')) {
     recommendedCourseIds = ['nafes-etec-ksa'];
     recommendedPaidCourseId = 'paid-nafes-excellence';
   } else if (currLower.includes('qudurat') || currLower.includes('tahsili') || currLower.includes('qiyas')) {

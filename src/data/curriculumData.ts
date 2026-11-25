@@ -279,7 +279,7 @@ export const COURSE_MODULES: CourseModule[] = [
   {
     id: 'nafes-etec-ksa',
     curriculumKey: 'nafes',
-    curriculumLabel: 'NAFES / نافس · هيئة تقويم التعليم ETEC',
+    curriculumLabel: 'NAFS / نافس · هيئة تقويم التعليم ETEC',
     gradeBands: ['grade-3-5', 'grade-6-8', 'grade-9'],
     subject: 'الرياضيات والعلوم والقراءة (الصفوف 3، 6، 9)',
     level: 'الاختبارات الوطنية السعودية — مدارس المملكة',

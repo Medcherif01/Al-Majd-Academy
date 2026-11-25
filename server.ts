@@ -34,7 +34,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Al-Majd International Academy server running on http://0.0.0.0:${PORT}`);
+    console.log(`Dateacher server running on http://0.0.0.0:${PORT}`);
   });
 }
 

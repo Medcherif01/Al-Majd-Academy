@@ -149,13 +149,13 @@ function getServerBoardTheme(curriculum: string): BoardHtmlTheme {
       crestSvg: `<svg viewBox="0 0 48 48" width="44" height="44" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 8h30v15c0 11-6.5 17-15 21C15.5 40 9 34 9 23V8z" stroke="#ffffff" stroke-width="2.4"/><path d="M24 8v35M9 21h30" stroke="#ffffff" stroke-width="1.8"/><circle cx="16.5" cy="14.5" r="2.2" fill="#ffffff"/><circle cx="31.5" cy="14.5" r="2.2" fill="#ffffff"/></svg>`,
     };
   }
-  if (c.includes('nafes') || c.includes('etec') || c.includes('نافس')) {
+  if (c.includes('nafs') || c.includes('nafes') || c.includes('etec') || c.includes('نافس')) {
     return {
       accentHex: '#047857',
       secondaryHex: '#064E3B',
       softBgHex: '#ECFDF5',
       borderHex: '#A7F3D0',
-      boardBadge: 'ETEC · NAFES (نـافـس)',
+      boardBadge: 'ETEC · NAFS (نـافـس)',
       crestSvg: `<svg viewBox="0 0 48 48" width="44" height="44" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M24 4L41 11v12c0 11-7.5 18.5-17 21C14.5 41.5 7 34 7 23V11L24 4z" stroke="#ffffff" stroke-width="2.4"/><path d="M24 14v18M17 20c3-2 7-2 7 2M31 20c-3-2-7-2-7 2M15 28l9 4 9-4" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/></svg>`,
     };
   }
@@ -433,7 +433,7 @@ export function buildBoardThemedA4PaperHtml(
 </head>
 <body>
   <div class="toolbar">
-    <div style="font-size:12px;color:#334155;"><strong>Al-Majd International Academy</strong> · Format A4 Officiel (${escapeHtml(paper.code)})</div>
+    <div style="font-size:12px;color:#334155;"><strong>Dateacher</strong> · Format A4 Officiel (${escapeHtml(paper.code)})</div>
     <button class="print-btn" onclick="window.print()">Imprimer / Télécharger PDF A4</button>
   </div>
   <div class="sheet">
@@ -450,7 +450,7 @@ export function buildBoardThemedA4PaperHtml(
         <div class="meta-cell"><span class="lbl">Catégorie</span><strong>${escapeHtml(paper.curriculum)}</strong></div>
         <div class="meta-cell"><span class="lbl">Matière</span><strong>${escapeHtml(paper.subject)}</strong></div>
         <div class="meta-cell"><span class="lbl">Date / Année</span><strong>${escapeHtml(dateDisplay)}</strong></div>
-        <div class="meta-cell"><span class="lbl">Publié par</span><strong>${escapeHtml(paper.uploadedByTeacherName || 'Al-Majd Faculty')}</strong></div>
+        <div class="meta-cell"><span class="lbl">Publié par</span><strong>${escapeHtml(paper.uploadedByTeacherName || 'Dateacher Faculty')}</strong></div>
       </div>
 
       <div class="rules">
@@ -461,7 +461,7 @@ export function buildBoardThemedA4PaperHtml(
 
       <footer>
         <span>Délivré à ${escapeHtml(buyerName)} (${escapeHtml(buyerEmail)})</span>
-        <span>Al-Majd International Academy · Format A4 Officiel</span>
+        <span>Dateacher · Format A4 Officiel</span>
       </footer>
     </div>
   </div>

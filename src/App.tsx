@@ -603,7 +603,7 @@ export default function App() {
                               className="px-4 py-3 border border-[#CBD5E1] hover:border-[#6D28D9] bg-[#F5F3FF] text-[#4C1D95] text-sm font-semibold rounded-xl transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer"
                             >
                               <Layers className="w-4 h-4 text-[#6D28D9]" />
-                              <span>STEP · GAT · NAFES · IELTS</span>
+                              <span>STEP · GAT · NAFS · IELTS</span>
                             </motion.button>
 
                             <motion.button
@@ -688,7 +688,7 @@ export default function App() {
                             </span>
                           </div>
                           <div className="font-display text-lg font-bold text-[#0B1633] mb-1">
-                            STEP · GAT · NAFES · IELTS
+                            STEP · GAT · NAFS · IELTS
                           </div>
                           <p className="text-xs text-slate-600 leading-relaxed">
                             Phonics · Skill Builder · Standards · Rédaction
@@ -723,7 +723,7 @@ export default function App() {
                                 : 'Cours Ciblés, Payants & IA'}
                           </div>
                           <p className="text-xs text-slate-600 leading-relaxed">
-                            SAT · IB · IGCSE · NAFES · Qudurat · Bac FR
+                            SAT · IB · IGCSE · NAFS · Qudurat · Bac FR
                           </p>
                         </motion.button>
 
@@ -806,8 +806,8 @@ export default function App() {
                             {lang === 'ar'
                               ? 'مروان المحمدي (المسار الإنجليزي) ومحمد شريف (الفرنسي والعربي، نافس والقدرات)'
                               : lang === 'en'
-                                ? 'Marwan Mhamdi (English Tracks) & Mohamed Cherif (French, Arabic, NAFES & Qudurat)'
-                                : 'Marwan Mhamdi (cursus anglais) & Mohamed Cherif (français, arabe, NAFES & Qudurat)'}
+                                ? 'Marwan Mhamdi (English Tracks) & Mohamed Cherif (French, Arabic, NAFS & Qudurat)'
+                                : 'Marwan Mhamdi (cursus anglais) & Mohamed Cherif (français, arabe, NAFS & Qudurat)'}
                           </h2>
                         </div>
 
@@ -1079,7 +1079,7 @@ export default function App() {
               <AcademyCrestIcon className="w-6 h-6 shrink-0" />
               <span className="font-display font-extrabold text-[#0B1633]">{t.brand}</span>
               <span className="text-slate-300">·</span>
-              <span>SAT · IB · IGCSE · NAFES · Qudurat · STEP · IELTS · Bac Français</span>
+              <span>SAT · IB · IGCSE · NAFS · Qudurat · STEP · IELTS · Bac Français</span>
             </div>
             <div className="flex flex-wrap items-center gap-5">
               <button

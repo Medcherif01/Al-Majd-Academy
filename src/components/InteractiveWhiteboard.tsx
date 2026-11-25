@@ -518,7 +518,7 @@ export function InteractiveWhiteboard({
     const url = canvas.toDataURL('image/png');
     const a = document.createElement('a');
     a.href = url;
-    a.download = `almajd_tableau_${new Date().toISOString().slice(0, 10)}.png`;
+    a.download = `dateacher_tableau_${new Date().toISOString().slice(0, 10)}.png`;
     document.body.appendChild(a);
     a.click();
     a.remove();

@@ -84,7 +84,7 @@ const PAST_PAPER_CATEGORIES = [
   'American (SAT/AP)',
   'IB Diploma',
   'IGCSE & A-Level',
-  'NAFES (ETEC)',
+  'NAFS (ETEC)',
   'Qudurat & Tahsili',
   'Bac Français',
 ] as const;
@@ -148,9 +148,9 @@ const CURATED_SKILLS_BY_TEACHER: Record<'marwan' | 'mohamed', string[]> = {
     'Critical Academic Vocabulary',
   ],
   mohamed: [
-    'NAFES Lecture & Compréhension ETEC',
-    'NAFES Mathématiques Fondamentales',
-    'NAFES Sciences Expérimentales',
+    'NAFS Lecture & Compréhension ETEC',
+    'NAFS Mathématiques Fondamentales',
+    'NAFS Sciences Expérimentales',
     'Qudurat Quantitatif Rapide',
     'Qudurat Analogies Verbales (قياس)',
     'Tahsili Mathématiques & Physique',
@@ -528,7 +528,7 @@ export function TeacherPortal({
       CURATED_SKILLS_BY_TEACHER[teacherId][1],
     ]);
     setPaperLanguage(teacherId === 'mohamed' ? 'Français' : 'English');
-    setPaperCategory(teacherId === 'mohamed' ? 'NAFES (ETEC)' : 'IB Diploma');
+    setPaperCategory(teacherId === 'mohamed' ? 'NAFS (ETEC)' : 'IB Diploma');
 
     const pollId = setInterval(() => {
       void fetchOverview(teacherId, teacherToken, true);
@@ -1228,7 +1228,7 @@ export function TeacherPortal({
     { id: 'standards', label: 'Standards' },
     { id: 'step', label: 'STEP prep' },
     { id: 'gat', label: 'GAT prep' },
-    { id: 'nafes', label: 'NAFES prep' },
+    { id: 'nafes', label: 'NAFS prep' },
     { id: 'ielts', label: 'IELTS prep' },
     { id: 'phonics', label: 'Phonics' },
     { id: 'skill-builder', label: 'Skill builder' },
@@ -1846,7 +1846,7 @@ export function TeacherPortal({
                             type="button"
                             onClick={() =>
                               copyText(
-                                `Al-Majd Academy — Code élève pour ${st.name}: ${st.studentCode}`,
+                                `Dateacher — Code élève pour ${st.name}: ${st.studentCode}`,
                                 `Invitation élève ${st.studentCode} copiée.`
                               )
                             }
@@ -1865,7 +1865,7 @@ export function TeacherPortal({
                             type="button"
                             onClick={() =>
                               copyText(
-                                `Al-Majd Academy — Code parent pour ${st.name}: ${st.parentCode}`,
+                                `Dateacher — Code parent pour ${st.name}: ${st.parentCode}`,
                                 `Invitation parent ${st.parentCode} copiée.`
                               )
                             }
@@ -2090,7 +2090,7 @@ export function TeacherPortal({
                   className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white"
                 >
                   <option value="STEP & GAT">STEP &amp; GAT</option>
-                  <option value="NAFES (ETEC)">NAFES (ETEC)</option>
+                  <option value="NAFS (ETEC)">NAFS (ETEC)</option>
                   <option value="IELTS Academic">IELTS Academic</option>
                   <option value="Digital SAT">Digital SAT</option>
                   <option value="IB Diploma">IB Diploma</option>
@@ -3615,7 +3615,7 @@ export function TeacherPortal({
                     required
                     value={paperSubject}
                     onChange={(e) => setPaperSubject(e.target.value)}
-                    placeholder="Ex : Mathématiques, Physics HL, NAFES Reading..."
+                    placeholder="Ex : Mathématiques, Physics HL, NAFS Reading..."
                     className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
                   />
                 </div>
@@ -4261,7 +4261,7 @@ export function TeacherPortal({
                   type="text"
                   value={newProfileSkill}
                   onChange={(e) => setNewProfileSkill(e.target.value)}
-                  placeholder="Ex : Préparation Score 1500+ SAT, Coaching Intensif NAFES..."
+                  placeholder="Ex : Préparation Score 1500+ SAT, Coaching Intensif NAFS..."
                   className="flex-1 px-3 py-2 text-xs border border-slate-300 rounded-xl"
                 />
                 <button
@@ -4386,7 +4386,7 @@ export function TeacherPortal({
         </div>
       )}
 
-      {/* EMBEDDED PREP & STANDARDS TABS (Standards, STEP, GAT, NAFES, IELTS, Phonics, Skill Builder) */}
+      {/* EMBEDDED PREP & STANDARDS TABS (Standards, STEP, GAT, NAFS, IELTS, Phonics, Skill Builder) */}
       {isPrepSubTab && (
         <ExamPrepHubs
           lang={lang}

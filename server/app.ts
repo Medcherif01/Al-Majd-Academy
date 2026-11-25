@@ -455,7 +455,7 @@ export function createApiApp() {
         .join('\n');
 
       const eventPayload: any = {
-        summary: `Al-Majd Coaching : ${details.studentName} & ${details.trainerName} (${details.subject})`,
+        summary: `Dateacher Coaching : ${details.studentName} & ${details.trainerName} (${details.subject})`,
         description: descriptionLines,
         start: { dateTime: startIso, timeZone: 'Asia/Riyadh' },
         end: { dateTime: endDate, timeZone: 'Asia/Riyadh' },
@@ -1776,7 +1776,7 @@ export function createApiApp() {
         assignedSkills:
           validTeacher === 'marwan'
             ? ['STEP Grammar Core', 'GAT Quantitative Ratios', 'Digital SAT Linear Modeling']
-            : ['NAFES Compétences Clés', 'Qudurat Analogies', 'Méthodologie AEFE'],
+            : ['NAFS Compétences Clés', 'Qudurat Analogies', 'Méthodologie AEFE'],
         studentCode: makeCode('PATH'),
         parentCode: makeCode('FAM'),
         status: 'Waiting to join' as const,
@@ -1941,15 +1941,16 @@ export function createApiApp() {
       } = req.body ?? {};
 
       const validTeacher: 'marwan' | 'mohamed' = teacherId === 'mohamed' ? 'mohamed' : 'marwan';
+      const normalizedCurriculum = curriculum === 'NAFES (ETEC)' ? 'NAFS (ETEC)' : curriculum;
       const allowedCurricula: PastPaperItem['curriculum'][] = [
         'American (SAT/AP)',
         'IB Diploma',
         'IGCSE & A-Level',
-        'NAFES (ETEC)',
+        'NAFS (ETEC)',
         'Qudurat & Tahsili',
         'Bac Français',
       ];
-      if (!allowedCurricula.includes(curriculum)) {
+      if (!allowedCurricula.includes(normalizedCurriculum)) {
         res.status(400).json({ error: 'Catégorie d’examen invalide.' });
         return;
       }
@@ -1978,7 +1979,7 @@ export function createApiApp() {
         fileBase64,
         mimeType: typeof mimeType === 'string' ? mimeType : '',
         fileName: fileName.trim(),
-        curriculum,
+        curriculum: normalizedCurriculum,
         subject: subject.trim(),
         year: parsedYear,
         examDate: cleanExamDate,
@@ -1995,7 +1996,7 @@ export function createApiApp() {
         id: paperId,
         code: extracted.code,
         title: extracted.title,
-        curriculum,
+        curriculum: normalizedCurriculum,
         subject: subject.trim(),
         year: parsedYear,
         examDate: cleanExamDate,

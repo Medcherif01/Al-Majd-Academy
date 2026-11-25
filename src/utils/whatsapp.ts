@@ -24,7 +24,7 @@ export const TEACHER_WHATSAPP: Record<'marwan' | 'mohamed', TeacherWhatsAppInfo>
     phoneDisplay: '+966 59 422 8783',
     phoneE164: '+966594228783',
     digits: '966594228783',
-    tracksLabel: 'FR / AR Tracks (NAFES, Qudurat, Tahsili, Bac Français)',
+    tracksLabel: 'FR / AR Tracks (NAFS, Qudurat, Tahsili, Bac Français)',
   },
 };
 
@@ -76,6 +76,7 @@ export function resolveTeacherIdForCurriculum(
   }
   const val = (curriculumOrTrack || '').toLowerCase();
   if (
+    val.includes('nafs') ||
     val.includes('nafes') ||
     val.includes('qudurat') ||
     val.includes('tahsili') ||
@@ -137,7 +138,7 @@ export function buildWhatsAppActivationMessage(params: {
   const lines: string[] = [];
   if (lang === 'ar') {
     lines.push(`السلام عليكم أستاذ ${teacherName}،`);
-    lines.push(`أرغب في ${typeLabel} على منصة Al-Majd Academy:`);
+    lines.push(`أرغب في ${typeLabel} على منصة Dateacher:`);
     lines.push(`• المحتوى: ${params.itemTitle}${params.itemCode ? ` (${params.itemCode})` : ''}`);
     if (params.curriculum) lines.push(`• المسار: ${params.curriculum}`);
     if (typeof params.priceSar === 'number') lines.push(`• الرسوم: ${params.priceSar} SAR`);
@@ -147,7 +148,7 @@ export function buildWhatsAppActivationMessage(params: {
     lines.push(`شكراً لتفعيل الحساب.`);
   } else if (lang === 'en') {
     lines.push(`Hello ${teacherName},`);
-    lines.push(`I would like to request ${typeLabel} on Al-Majd Academy:`);
+    lines.push(`I would like to request ${typeLabel} on Dateacher:`);
     lines.push(`• Item: ${params.itemTitle}${params.itemCode ? ` (${params.itemCode})` : ''}`);
     if (params.curriculum) lines.push(`• Curriculum: ${params.curriculum}`);
     if (typeof params.priceSar === 'number') lines.push(`• Price: ${params.priceSar} SAR`);
@@ -157,7 +158,7 @@ export function buildWhatsAppActivationMessage(params: {
     lines.push(`Thank you!`);
   } else {
     lines.push(`Bonjour ${teacherName},`);
-    lines.push(`Je souhaite demander l’${typeLabel} sur Al-Majd Academy :`);
+    lines.push(`Je souhaite demander l’${typeLabel} sur Dateacher :`);
     lines.push(`• Contenu : ${params.itemTitle}${params.itemCode ? ` (${params.itemCode})` : ''}`);
     if (params.curriculum) lines.push(`• Programme : ${params.curriculum}`);
     if (typeof params.priceSar === 'number') lines.push(`• Tarif : ${params.priceSar} SAR`);

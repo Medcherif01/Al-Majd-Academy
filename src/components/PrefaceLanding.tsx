@@ -68,8 +68,8 @@ const COPY: Record<
   }
 > = {
   fr: {
-    brand: 'Al-Majd Academy',
-    trackLine: 'SAT · IB · IGCSE · NAFES · Qudurat · Bac Français',
+    brand: 'Dateacher',
+    trackLine: 'SAT · IB · IGCSE · NAFS · Qudurat · Bac Français',
     kicker: 'Portail Académique KSA · FR / EN / AR',
     heading: 'Choisissez votre accès',
     subtitle: 'Connectez-vous ou survolez un module ci-dessous pour afficher les parcours.',
@@ -99,7 +99,7 @@ const COPY: Record<
           { label: 'American (SAT / AP)', dest: { kind: 'courses', track: 'american' } },
           { label: 'IB Diploma', dest: { kind: 'courses', track: 'ib' } },
           { label: 'IGCSE & A-Level', dest: { kind: 'courses', track: 'british' } },
-          { label: 'NAFES (ETEC)', dest: { kind: 'courses', track: 'nafes' } },
+          { label: 'NAFS (ETEC)', dest: { kind: 'courses', track: 'nafes' } },
           { label: 'Qudurat & Tahsili', dest: { kind: 'courses', track: 'qiyas' } },
           { label: 'Bac Français (AEFE)', dest: { kind: 'courses', track: 'french' } },
           { label: 'Prep Hubs (STEP · GAT · IELTS)', dest: { kind: 'hub', tab: 'step' } },
@@ -112,11 +112,12 @@ const COPY: Record<
         sub: 'Générateur Gemini',
         tone: 'violet',
         items: [
-          { label: 'Digital SAT / AP', dest: { kind: 'ai-exam', curriculum: 'American SAT' } },
-          { label: 'IB Diploma', dest: { kind: 'ai-exam', curriculum: 'IB Diploma' } },
-          { label: 'IGCSE & A-Level', dest: { kind: 'ai-exam', curriculum: 'Cambridge IGCSE' } },
-          { label: 'NAFES & Qudurat', dest: { kind: 'ai-exam', curriculum: 'Qudurat & Tahsili' } },
-          { label: 'Bac Français', dest: { kind: 'ai-exam', curriculum: 'Bac Français' } },
+          { label: 'Digital SAT / AP', dest: { kind: 'ai-exam', curriculum: 'American Digital SAT' } },
+          { label: 'IB Diploma', dest: { kind: 'ai-exam', curriculum: 'IB Diploma (DP)' } },
+          { label: 'IGCSE & A-Level', dest: { kind: 'ai-exam', curriculum: 'Cambridge IGCSE / A-Level' } },
+          { label: 'NAFS (ETEC)', dest: { kind: 'ai-exam', curriculum: 'NAFS / نافس (ETEC)' } },
+          { label: 'Qudurat & Tahsili', dest: { kind: 'ai-exam', curriculum: 'Qudurat & Tahsili (قياس)' } },
+          { label: 'Bac Français', dest: { kind: 'ai-exam', curriculum: 'Baccalauréat Français (AEFE)' } },
         ],
       },
       {
@@ -146,8 +147,8 @@ const COPY: Record<
     ],
   },
   en: {
-    brand: 'Al-Majd Academy',
-    trackLine: 'SAT · IB · IGCSE · NAFES · Qudurat · French Bac',
+    brand: 'Dateacher',
+    trackLine: 'SAT · IB · IGCSE · NAFS · Qudurat · French Bac',
     kicker: 'KSA Academic Portal · FR / EN / AR',
     heading: 'Choose Your Portal',
     subtitle: 'Sign in above or hover any module below to slide out direct track shortcuts.',
@@ -177,7 +178,7 @@ const COPY: Record<
           { label: 'American (SAT / AP)', dest: { kind: 'courses', track: 'american' } },
           { label: 'IB Diploma', dest: { kind: 'courses', track: 'ib' } },
           { label: 'IGCSE & A-Level', dest: { kind: 'courses', track: 'british' } },
-          { label: 'NAFES (ETEC)', dest: { kind: 'courses', track: 'nafes' } },
+          { label: 'NAFS (ETEC)', dest: { kind: 'courses', track: 'nafes' } },
           { label: 'Qudurat & Tahsili', dest: { kind: 'courses', track: 'qiyas' } },
           { label: 'French Bac (AEFE)', dest: { kind: 'courses', track: 'french' } },
           { label: 'Prep Hubs (STEP · GAT · IELTS)', dest: { kind: 'hub', tab: 'step' } },
@@ -190,11 +191,12 @@ const COPY: Record<
         sub: 'Gemini Generator',
         tone: 'violet',
         items: [
-          { label: 'Digital SAT / AP', dest: { kind: 'ai-exam', curriculum: 'American SAT' } },
-          { label: 'IB Diploma', dest: { kind: 'ai-exam', curriculum: 'IB Diploma' } },
-          { label: 'IGCSE & A-Level', dest: { kind: 'ai-exam', curriculum: 'Cambridge IGCSE' } },
-          { label: 'NAFES & Qudurat', dest: { kind: 'ai-exam', curriculum: 'Qudurat & Tahsili' } },
-          { label: 'French Bac', dest: { kind: 'ai-exam', curriculum: 'Bac Français' } },
+          { label: 'Digital SAT / AP', dest: { kind: 'ai-exam', curriculum: 'American Digital SAT' } },
+          { label: 'IB Diploma', dest: { kind: 'ai-exam', curriculum: 'IB Diploma (DP)' } },
+          { label: 'IGCSE & A-Level', dest: { kind: 'ai-exam', curriculum: 'Cambridge IGCSE / A-Level' } },
+          { label: 'NAFS (ETEC)', dest: { kind: 'ai-exam', curriculum: 'NAFS / نافس (ETEC)' } },
+          { label: 'Qudurat & Tahsili', dest: { kind: 'ai-exam', curriculum: 'Qudurat & Tahsili (قياس)' } },
+          { label: 'French Bac', dest: { kind: 'ai-exam', curriculum: 'Baccalauréat Français (AEFE)' } },
         ],
       },
       {
@@ -224,8 +226,8 @@ const COPY: Record<
     ],
   },
   ar: {
-    brand: 'أكاديمية المجد',
-    trackLine: 'SAT · IB · IGCSE · نافس · قدرات · البكالوريا الفرنسية',
+    brand: 'Dateacher',
+    trackLine: 'SAT · IB · IGCSE · NAFS نافس · قدرات · البكالوريا الفرنسية',
     kicker: 'البوابة الأكاديمية السعودية · عربي / فرنسي / إنجليزي',
     heading: 'اختر بوابة الدخول',
     subtitle: 'سجّل الدخول أو مرّر المؤشر على أي قسم بالأسفل لعرض المسارات الفرعية.',
@@ -255,7 +257,7 @@ const COPY: Record<
           { label: 'المسار الأمريكي SAT / AP', dest: { kind: 'courses', track: 'american' } },
           { label: 'البكالوريا الدولية IB', dest: { kind: 'courses', track: 'ib' } },
           { label: 'البريطاني IGCSE', dest: { kind: 'courses', track: 'british' } },
-          { label: 'اختبارات نافس NAFES', dest: { kind: 'courses', track: 'nafes' } },
+          { label: 'اختبارات نافس NAFS', dest: { kind: 'courses', track: 'nafes' } },
           { label: 'القدرات والتحصيلي', dest: { kind: 'courses', track: 'qiyas' } },
           { label: 'البكالوريا الفرنسية', dest: { kind: 'courses', track: 'french' } },
           { label: 'مراكز التدريب STEP · GAT · IELTS', dest: { kind: 'hub', tab: 'step' } },
@@ -268,11 +270,12 @@ const COPY: Record<
         sub: 'توليد Gemini الرسمي',
         tone: 'violet',
         items: [
-          { label: 'Digital SAT / AP', dest: { kind: 'ai-exam', curriculum: 'American SAT' } },
-          { label: 'IB Diploma', dest: { kind: 'ai-exam', curriculum: 'IB Diploma' } },
-          { label: 'IGCSE & A-Level', dest: { kind: 'ai-exam', curriculum: 'Cambridge IGCSE' } },
-          { label: 'نافس والقدرات', dest: { kind: 'ai-exam', curriculum: 'Qudurat & Tahsili' } },
-          { label: 'البكالوريا الفرنسية', dest: { kind: 'ai-exam', curriculum: 'Bac Français' } },
+          { label: 'Digital SAT / AP', dest: { kind: 'ai-exam', curriculum: 'American Digital SAT' } },
+          { label: 'IB Diploma', dest: { kind: 'ai-exam', curriculum: 'IB Diploma (DP)' } },
+          { label: 'IGCSE & A-Level', dest: { kind: 'ai-exam', curriculum: 'Cambridge IGCSE / A-Level' } },
+          { label: 'نافس NAFS (ETEC)', dest: { kind: 'ai-exam', curriculum: 'NAFS / نافس (ETEC)' } },
+          { label: 'القدرات والتحصيلي', dest: { kind: 'ai-exam', curriculum: 'Qudurat & Tahsili (قياس)' } },
+          { label: 'البكالوريا الفرنسية', dest: { kind: 'ai-exam', curriculum: 'Baccalauréat Français (AEFE)' } },
         ],
       },
       {
@@ -365,7 +368,7 @@ export function PrefaceLanding({
             animate={{ scale: 1, opacity: 1 }}
             transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
             src="/assets/aistudio/image_c25ca50d.png"
-            alt="DaTeacher — Learn. Practice. Succeed."
+            alt="Dateacher — Learn. Practice. Succeed."
             referrerPolicy="no-referrer"
             onError={() => setImageFailed(true)}
             className="w-full h-full object-cover object-center"

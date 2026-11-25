@@ -98,7 +98,7 @@ const PREP_DRILLS: Record<'step' | 'gat' | 'nafes' | 'ielts' | 'skill-builder', 
   nafes: [
     {
       id: 'nafes-1',
-      tag: 'NAFES · Grade 6/9 Mathematics',
+      tag: 'NAFS · Grade 6/9 Mathematics',
       prompt: 'في اختبار نافس: إذا كانت نسبة البنين إلى البنات في نادٍ علمي 3 : 5 وكان عدد البنين 18، فكم إجمالي عدد الطلاب؟',
       options: ['30 طالباً', '48 طالباً', '42 طالباً', '36 طالباً'],
       correctIndex: 1,
@@ -106,7 +106,7 @@ const PREP_DRILLS: Record<'step' | 'gat' | 'nafes' | 'ielts' | 'skill-builder', 
     },
     {
       id: 'nafes-2',
-      tag: 'NAFES · Grade 9 Science (ETEC)',
+      tag: 'NAFS · Grade 9 Science (ETEC)',
       prompt: 'أيّ عضية في الخلية النباتية مسؤولة عن تحويل الطاقة الضوئية إلى طاقة كيميائية؟',
       options: ['الميتوكوندريا', 'البلاستيدات الخضراء', 'جهاز جولجي', 'النواة'],
       correctIndex: 1,
@@ -114,7 +114,7 @@ const PREP_DRILLS: Record<'step' | 'gat' | 'nafes' | 'ielts' | 'skill-builder', 
     },
     {
       id: 'nafes-3',
-      tag: 'NAFES · Reading Comprehension',
+      tag: 'NAFS · Reading Comprehension',
       prompt: 'When an ETEC reading passage asks for the "main idea", which choice should you eliminate first?',
       options: [
         'A minor detail mentioned in only one sentence',
@@ -123,7 +123,7 @@ const PREP_DRILLS: Record<'step' | 'gat' | 'nafes' | 'ielts' | 'skill-builder', 
         'A synthesis of the opening and conclusion',
       ],
       correctIndex: 0,
-      explanation: 'Main-idea distractors in NAFES are almost always true details that are too narrow to cover the whole text.',
+      explanation: 'Main-idea distractors in NAFS are almost always true details that are too narrow to cover the whole text.',
     },
   ],
   ielts: [
@@ -216,7 +216,7 @@ const PHONICS_CARDS = [
 
 const STANDARDS_MATRIX = [
   {
-    code: 'NAFES',
+    code: 'NAFS',
     authority: 'ETEC · Saudi Arabia',
     grades: 'Grades 3, 6, 9',
     subjects: 'Arabic Reading, Mathematics, Science',
@@ -312,7 +312,7 @@ export function ExamPrepHubs({
     { id: 'standards', label: 'Standards' },
     { id: 'step', label: 'STEP prep' },
     { id: 'gat', label: 'GAT prep' },
-    { id: 'nafes', label: 'NAFES prep' },
+    { id: 'nafes', label: 'NAFS prep' },
     { id: 'ielts', label: 'IELTS prep' },
     { id: 'phonics', label: 'Phonics' },
     { id: 'skill-builder', label: 'Skill builder' },
@@ -416,7 +416,7 @@ export function ExamPrepHubs({
             {onLaunchAiExam && (
               <button
                 type="button"
-                onClick={() => onLaunchAiExam('NAFES / نافس (ETEC)')}
+                onClick={() => onLaunchAiExam('NAFS / نافس (ETEC)')}
                 className="px-4 py-2.5 bg-[#0B6E8C] hover:bg-[#08566E] text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
               >
                 <Sparkles className="w-3.5 h-3.5" />
@@ -476,7 +476,7 @@ export function ExamPrepHubs({
               <h3 className="font-display text-2xl font-semibold text-[#0F2537]">
                 {activeTab === 'step' && 'Qiyas STEP · Structure, Vocabulary & Academic Reading'}
                 {activeTab === 'gat' && 'GAT / Qudurat · Quantitative Speed & Verbal Analogies'}
-                {activeTab === 'nafes' && 'NAFES (ETEC) · National Mastery Drills (Math, Science, Reading)'}
+                {activeTab === 'nafes' && 'NAFS (ETEC) · National Mastery Drills (Math, Science, Reading)'}
                 {activeTab === 'ielts' && 'IELTS Academic · Band 7.5+ Writing & Lexical Precision'}
                 {activeTab === 'skill-builder' && 'Skill Builder · High-Frequency Core Competency Drills'}
               </h3>
@@ -492,7 +492,7 @@ export function ExamPrepHubs({
                   onClick={() =>
                     onLaunchAiExam(
                       activeTab === 'nafes'
-                        ? 'NAFES / نافس (ETEC)'
+                        ? 'NAFS / نافس (ETEC)'
                         : activeTab === 'gat'
                           ? 'Qudurat & Tahsili (قياس)'
                           : 'IB Diploma (DP)'

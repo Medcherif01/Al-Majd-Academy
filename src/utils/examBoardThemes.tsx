@@ -51,7 +51,7 @@ export function getExamBoardTheme(curriculum: string): ExamBoardVisualTheme {
       headerGradientClass: 'from-[#4C0519] via-[#881337] to-[#BE123C]',
     };
   }
-  if (c.includes('nafes') || c.includes('etec') || c.includes('نافس')) {
+  if (c.includes('nafs') || c.includes('nafes') || c.includes('etec') || c.includes('نافس')) {
     return {
       curriculum,
       shortTag: 'ETEC · نافس',
@@ -107,8 +107,8 @@ export function ExamBoardCrestSvg({ curriculum, className = 'w-8 h-8' }: { curri
     );
   }
 
-  if (c.includes('nafes') || c.includes('etec') || c.includes('نافس')) {
-    // NAFES Saudi Academic Palm & Shield Crest
+  if (c.includes('nafs') || c.includes('nafes') || c.includes('etec') || c.includes('نافس')) {
+    // NAFS Saudi Academic Palm & Shield Crest
     return (
       <svg viewBox="0 0 48 48" fill="none" className={className} aria-hidden="true">
         <path d="M24 4L41 11v12c0 11-7.5 18.5-17 21C14.5 41.5 7 34 7 23V11L24 4z" stroke="currentColor" strokeWidth="2.4" />
